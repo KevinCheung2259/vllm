@@ -126,8 +126,9 @@ class SLAScheduler:
                     self._consecutive_errors = 0
                     
                     if self.config.verbose_logging:
-                        logger.info(f"SLA schedule decision: "
+                        logger.debug(f"SLA schedule decision: "
                                    f"target={target_latency:.1f}ms, "
+                                   f"predicted={result.predicted_latency:.1f}ms, "
                                    f"budget={result.optimal_token_budget}, "
                                    f"batch={result.actual_batch_size}, "
                                    f"allocation={len(result.allocation)} requests")
@@ -136,6 +137,7 @@ class SLAScheduler:
                         'allocation': result.allocation,
                         'token_budget': result.optimal_token_budget,
                         'target_latency': target_latency,
+                        'predicted_latency': result.predicted_latency,
                         'prioritize_decode': result.decode_count > 0
                     }
             
@@ -147,7 +149,7 @@ class SLAScheduler:
                 token_budget = max(1, token_budget)
                 
                 if self.config.verbose_logging:
-                    logger.info(f"SLA fallback computation: "
+                    logger.debug(f"SLA fallback computation: "
                                f"target={target_latency:.1f}ms, "
                                f"budget={token_budget}, "
                                f"batch={total_requests}")
@@ -215,7 +217,7 @@ class SLAScheduler:
             self.stats['total_performance_records'] += 1
             
             if self.config.verbose_logging:
-                logger.info(f"Performance recorded: B={batch_size}, "
+                logger.debug(f"Performance recorded: B={batch_size}, "
                            f"S={total_tokens}, T={actual_latency:.2f}ms")
                 
         except Exception as e:
@@ -390,3 +392,10 @@ class SLAScheduler:
                 logger.info("SLA Scheduler disabled by config update")
         
         logger.info(f"SLA Scheduler config updated: {new_config}")
+
+    def get_p_max(self) -> Optional[float]:
+        """返回吞吐模型的 P_max 参数（tokens/ms）；若不可用返回 None"""
+        try:
+            return self.predictor.get_p_max()
+        except Exception:
+            return None

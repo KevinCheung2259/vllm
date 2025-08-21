@@ -49,6 +49,15 @@ except ImportError as e:
     SLAScheduler = None
     SLASchedulerConfig = None
 
+# ELRAR Engine Agent导入
+try:
+    from .engine_agent import EngineAgent
+    ELRAR_AGENT_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"ELRAR Engine Agent not available: {e}")
+    ELRAR_AGENT_AVAILABLE = False
+    EngineAgent = None
+
 
 class Scheduler(SchedulerInterface):
 
@@ -207,6 +216,27 @@ class Scheduler(SchedulerInterface):
         else:
             logger.info("SLA Scheduler not available, using legacy load-aware scheduling")
 
+        # 初始化ELRAR Engine Agent
+        self.elrar_agent = None
+        if ELRAR_AGENT_AVAILABLE:
+            try:
+                # 优先从配置中读取ELRAR配置
+                elrar_config = None
+                if hasattr(self.vllm_config, 'elrar_config') and self.vllm_config.elrar_config:
+                    elrar_config = self.vllm_config.elrar_config
+                    logger.info(f"Using ELRAR config from VllmConfig: {elrar_config}")
+                else:
+                    logger.info("No ELRAR config found in VllmConfig, using environment variables")
+                
+                self.elrar_agent = EngineAgent(config=elrar_config)
+                if self.elrar_agent.enabled:
+                    logger.info(f"ELRAR Engine Agent initialized: {self.elrar_agent.engine_id}")
+            except Exception as e:
+                logger.warning(f"ELRAR Engine Agent initialization failed: {e}")
+                self.elrar_agent = None
+        else:
+            logger.debug("ELRAR Engine Agent not available")
+
     def schedule(self) -> SchedulerOutput:
         # NOTE(woosuk) on the scheduling algorithm:
         # There's no "decoding phase" nor "prefill phase" in the scheduler.
@@ -262,12 +292,8 @@ class Scheduler(SchedulerInterface):
                     T_set = self.slo_tpot_ms
                 prioritize_decode = False
         else:
-            # 后备方案：使用原有的负载感知调度逻辑
-            if self.enable_load_aware_sched:
-                token_budget, T_set = self._compute_load_aware_budget_v2()
-            else:
-                token_budget = self.max_num_scheduled_tokens
-                T_set = self.slo_tpot_ms
+            sla_schedule_decision = None
+            token_budget = self.max_num_scheduled_tokens
             prioritize_decode = False
         
         # 统一夹紧到全局上限，确保不超过系统限制
@@ -729,9 +755,32 @@ class Scheduler(SchedulerInterface):
         if events:
             batch = KVEventBatch(ts=time.time(), events=events)
             self.kv_event_publisher.publish(batch)
+        
+        # ELRAR: 采集引擎状态并推送到Gateway（异步封装）
+        if self.elrar_agent and self.elrar_agent.enabled:
+            try:
+                try:
+                    import asyncio  # 延迟导入以避免非必要依赖
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(
+                        self._collect_and_push_engine_state_async(
+                            scheduler_output,
+                            sla_schedule_decision if 'sla_schedule_decision' in locals() else None,
+                            T_set if 'T_set' in locals() else None,
+                        )
+                    )
+                except RuntimeError:
+                    # 无运行中的事件循环，回退为同步执行
+                    self._collect_and_push_engine_state_sync(
+                        scheduler_output,
+                        sla_schedule_decision if 'sla_schedule_decision' in locals() else None,
+                        T_set if 'T_set' in locals() else None,
+                    )
+            except Exception as e:
+                logger.warning(f"ELRAR state collection dispatch failed: {e}")
 
         # Profiling: 记录调度统计信息，但不立即写入文件（等待model run完成）
-        if self.enable_profiling:
+        if self.enable_profiling or not self.sla_scheduler.config.use_pretrained_model:
             schedule_end_time = time.monotonic()
             self.last_schedule_end_time = schedule_end_time
             self._prepare_schedule_profiling(
@@ -912,11 +961,18 @@ class Scheduler(SchedulerInterface):
         model_runner_output: ModelRunnerOutput,
     ) -> dict[int, EngineCoreOutputs]:
 
-        # Profiling: 记录model run完成时间
-        if self.enable_profiling and self.last_schedule_end_time is not None:
+        # 计算model run时间（无论是否启用profiling都需要）
+        if self.last_schedule_end_time is not None:
             model_run_end_time = time.monotonic()
             model_run_duration = model_run_end_time - self.last_schedule_end_time
-            self._finalize_and_log_profiling(model_run_duration)
+            
+            # SLA调度器性能记录（独立于profiling）
+            if not self.sla_scheduler.config.use_pretrained_model:
+                self._record_sla_scheduler_performance(model_run_duration)
+            
+            # Profiling数据记录（仅在启用时）
+            if self.enable_profiling:
+                self._finalize_and_log_profiling(model_run_duration)
 
         sampled_token_ids = model_runner_output.sampled_token_ids
         spec_token_ids = model_runner_output.spec_token_ids
@@ -1312,18 +1368,6 @@ class Scheduler(SchedulerInterface):
         # 添加model run时间
         self.current_batch_profiling_data["model_run_duration_ms"] = model_run_duration * 1000
         
-        # 记录SLA调度器性能数据
-        if self.sla_scheduler and self.current_batch_profiling_data:
-            try:
-                batch_size = len([s for s in self.current_batch_profiling_data.get('chunk_sizes', []) if s > 0])
-                total_tokens = self.current_batch_profiling_data.get('total_scheduled_tokens', 0)
-                actual_latency = model_run_duration * 1000  # 转换为ms
-                
-                if batch_size > 0 and total_tokens > 0 and actual_latency > 0:
-                    self.sla_scheduler.record_performance(batch_size, total_tokens, actual_latency)
-            except Exception as e:
-                logger.warning(f"Failed to record SLA scheduler performance: {e}")
-        
         # 写入日志文件
         try:
             with open(self.profiling_log_file, 'a', encoding='utf-8') as f:
@@ -1350,3 +1394,108 @@ class Scheduler(SchedulerInterface):
         self.batch_counter += 1
         self.current_batch_profiling_data = None
         self.last_schedule_end_time = None
+
+    def _record_sla_scheduler_performance(self, model_run_duration: float) -> None:
+        """记录SLA调度器性能数据
+        
+        Args:
+            model_run_duration: 模型运行时间（秒）
+        """
+        if not self.sla_scheduler or not self.current_batch_profiling_data:
+            return
+        
+        try:
+            # 从profiling数据中提取性能指标
+            batch_size = len([s for s in self.current_batch_profiling_data.get('chunk_sizes', []) if s > 0])
+            total_tokens = self.current_batch_profiling_data.get('total_scheduled_tokens', 0)
+            actual_latency = model_run_duration * 1000  # 转换为ms
+            
+            # 验证数据有效性
+            if batch_size > 0 and total_tokens > 0 and actual_latency > 0:
+                # 记录到SLA调度器
+                self.sla_scheduler.record_performance(batch_size, total_tokens, actual_latency)
+            else:
+                if self.sla_scheduler.config.verbose_logging:
+                    logger.debug(f"SLA scheduler: skipping performance record due to invalid data: "
+                               f"batch_size={batch_size}, total_tokens={total_tokens}, "
+                               f"actual_latency={actual_latency:.2f}ms")
+                
+        except Exception as e:
+            logger.warning(f"Failed to record SLA scheduler performance: {e}")
+
+    # ==============================
+    # ELRAR Engine Agent helpers
+    # ==============================
+    def _collect_and_push_engine_state_sync(
+        self,
+        scheduler_output: SchedulerOutput,
+        sla_schedule_decision: Optional[dict] = None,
+        T_set: Optional[float] = None,
+    ) -> None:
+        """同步采集并推送引擎状态（最小侵入，轻量计算）。"""
+        try:
+            # 计算等待队列token总数
+            pending_tokens_total = 0
+            try:
+                for req in self.waiting:
+                    pending_tokens_total += max(0, req.num_tokens - req.num_computed_tokens)
+            except Exception:
+                pending_tokens_total = 0
+
+            # KV缓存容量（块级）
+            # kv_free_blocks = -1
+            # kv_total_blocks = -1
+            # try:
+            #     kv_free_blocks = self.kv_cache_manager.block_pool.get_num_free_blocks()
+            #     kv_total_blocks = self.kv_cache_manager.block_pool.num_gpu_blocks
+            # except Exception:
+            #     pass
+
+            # 引擎能力（tokens/s）：来自 P_max (tokens/ms)
+            engine_capacity = None
+            try:
+                if self.sla_scheduler is not None:
+                    p_max_tokens_per_ms = self.sla_scheduler.get_p_max()
+                    if p_max_tokens_per_ms is not None and p_max_tokens_per_ms > 0:
+                        engine_capacity = float(p_max_tokens_per_ms) * 1000.0
+            except Exception:
+                engine_capacity = None
+
+            # 延迟预测
+            latency_pred_ms = None
+            try:
+                if sla_schedule_decision:
+                    latency_pred_ms = sla_schedule_decision.get('predicted_latency', None)
+                if latency_pred_ms is None and T_set is not None:
+                    latency_pred_ms = T_set
+            except Exception:
+                latency_pred_ms = None
+
+            self.elrar_agent.collect_state(
+                scheduler_output,
+                pending_tokens_total=pending_tokens_total,
+                kv_cache_free_blocks=-1,
+                kv_cache_total_blocks=-1,
+                latency_pred_ms=latency_pred_ms,
+                engine_capacity=engine_capacity,
+            )
+        except Exception as e:
+            logger.warning(f"ELRAR state collection failed: {e}")
+
+    async def _collect_and_push_engine_state_async(
+        self,
+        scheduler_output: SchedulerOutput,
+        sla_schedule_decision: Optional[dict] = None,
+        T_set: Optional[float] = None,
+    ) -> None:
+        """异步封装：将同步采集任务丢到线程池，避免阻塞调度循环。"""
+        try:
+            import asyncio
+            await asyncio.to_thread(
+                self._collect_and_push_engine_state_sync,
+                scheduler_output,
+                sla_schedule_decision,
+                T_set,
+            )
+        except Exception as e:
+            logger.warning(f"ELRAR state collection (async) failed: {e}")

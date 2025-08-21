@@ -4227,6 +4227,8 @@ class VllmConfig:
     """The configurations for distributed KV cache transfer."""
     kv_events_config: Optional[KVEventsConfig] = None
     """The configurations for event publishing."""
+    elrar_config: Optional["ELRARConfig"] = field(default_factory=lambda: _get_default_elrar_config())
+    """The configurations for ELRAR Engine Agent."""
     # some opaque config, only used to provide additional information
     # for the hash computation, mainly used for testing, debugging or out of
     # tree config registration.
@@ -4744,3 +4746,42 @@ def get_layers_from_vllm_config(vllm_config: VllmConfig,
         vllm_config.compilation_config.static_forward_context.items()
         if isinstance(layer, layer_type)
     }
+
+
+# ELRAR Engine Agent 配置导入
+try:
+    from vllm.v1.core.sched.engine_agent import ELRARConfig
+except ImportError:
+    # 如果导入失败，创建一个占位符类
+    @dataclass
+    class ELRARConfig:
+        """ELRAR Engine Agent 配置类占位符"""
+        enabled: bool = True
+        # 网络配置
+        network_mode: str = "unicast"  # "unicast" | "broadcast"
+        # UDP 点播配置
+        gateway_host: Optional[str] = "127.0.0.1"  # State Gateway 主机地址
+        gateway_port: int = 9999  # State Gateway 端口
+        # UDP 广播配置（向后兼容）
+        broadcast_port: int = 9999
+        push_interval: int = 200
+        engine_id: Optional[str] = "http://localhost:8769"
+
+
+def _get_default_elrar_config() -> "ELRARConfig":
+    """获取默认的ELRAR配置"""
+    try:
+        from vllm.v1.core.sched.engine_agent import ELRARConfig
+        # 在这里设置你的自定义默认参数
+        return ELRARConfig(
+            enabled=False,
+            network_mode="unicast",  # 使用点播模式，更稳定
+            gateway_host="184.105.87.202",  # Docker 默认网关，更可靠（本地172.17.0.1）
+            gateway_port=9999,  # State Gateway 端口
+            broadcast_port=9999,
+            push_interval=200,  # 推送间隔（毫秒）
+            engine_id="http://65.49.81.73:8769"  # 引擎服务地址（本地localhost）
+        )
+    except ImportError:
+        # 如果导入失败，返回None
+        return None

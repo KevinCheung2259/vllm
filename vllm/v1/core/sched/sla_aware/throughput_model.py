@@ -105,8 +105,12 @@ class ThroughputSaturationModel:
             return np.nan
         
         # 提取特征
-        B = df['chunk_sizes'].apply(_compute_batch_size).to_numpy(dtype=float)
-        S = df['chunk_sizes'].apply(_compute_total_tokens).to_numpy(dtype=float)
+        if 'chunk_sizes' in df.columns:
+            B = df['chunk_sizes'].apply(_compute_batch_size).to_numpy(dtype=float)
+            S = df['chunk_sizes'].apply(_compute_total_tokens).to_numpy(dtype=float)
+        else:
+            B = df['batch_size'].to_numpy(dtype=float)
+            S = df['total_tokens'].to_numpy(dtype=float)
         T = df['model_run_duration_ms'].to_numpy(dtype=float)
         
         return B, S, T
@@ -343,3 +347,14 @@ class ThroughputSaturationModel:
         model = cls(verbose=verbose)
         model.load_model(filepath)
         return model
+
+    def get_model_parameters(self) -> Dict:
+        """获取模型参数"""
+        return {
+            'params': self.params,
+            'scales': self.scales,
+            'fit_metrics': self.fit_metrics,
+            'param_cov': getattr(self, 'param_cov', None),
+            'param_names': self.param_names,
+            'param_descriptions': self.param_descriptions
+        }

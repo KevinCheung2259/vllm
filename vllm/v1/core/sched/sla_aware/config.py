@@ -21,7 +21,7 @@ class SLASchedulerConfig:
     """
     
     # === 功能开关 ===
-    enabled: bool = True                    # 是否启用SLA调度器
+    enabled: bool = False                    # 是否启用SLA调度器
     fallback_on_error: bool = True          # 出错时是否回退到原有调度逻辑
     
     # === 性能模型配置 ===
@@ -74,7 +74,7 @@ class SLASchedulerConfig:
                 
                 # 性能模型配置
                 model_update_threshold=float(os.getenv('VLLM_SLA_MODEL_UPDATE_THRESHOLD', '0.15')),
-                min_samples_for_update=int(os.getenv('VLLM_SLA_MIN_SAMPLES', '50')),
+                min_samples_for_update=int(os.getenv('VLLM_SLA_MIN_SAMPLES', '64')),
                 max_buffer_size=int(os.getenv('VLLM_SLA_BUFFER_SIZE', '1000')),
                 model_confidence_threshold=float(os.getenv('VLLM_SLA_MODEL_CONFIDENCE', '0.8')),
                 
@@ -87,21 +87,22 @@ class SLASchedulerConfig:
                 queue_threshold=int(os.getenv('VLLM_SLA_QUEUE_THRESHOLD', '5')),
                 
                 # 优化算法参数
-                max_batch_search=int(os.getenv('VLLM_SLA_MAX_BATCH_SEARCH', '32')),
+                # max_batch_search=int(os.getenv('VLLM_SLA_MAX_BATCH_SEARCH', '32')),
                 optimization_timeout_ms=float(os.getenv('VLLM_SLA_OPT_TIMEOUT_MS', '1.0')),
                 
                 # 预训练模型配置
-                use_pretrained_model=os.getenv('VLLM_SLA_USE_PRETRAINED', 'true').lower() == 'true',
-                pretrained_model_path=os.getenv('VLLM_SLA_PRETRAINED_PATH', 'sla_scheduler_model.pkl'),
-                save_trained_model=os.getenv('VLLM_SLA_SAVE_MODEL', 'false').lower() == 'true',
-                model_save_path=os.getenv('VLLM_SLA_MODEL_SAVE_PATH', 'sla_scheduler_model.pkl'),
+                # 默认使用预训练模型时，就不会进行在线训练
+                use_pretrained_model=os.getenv('VLLM_SLA_USE_PRETRAINED', 'false').lower() == 'true',
+                pretrained_model_path=os.getenv('VLLM_SLA_PRETRAINED_PATH', 'sla_scheduler_model_h100.pkl'),
+                save_trained_model=os.getenv('VLLM_SLA_SAVE_MODEL', 'true').lower() == 'true',
+                model_save_path=os.getenv('VLLM_SLA_MODEL_SAVE_PATH', 'sla_scheduler_model_v2.pkl'),
                 
                 # 线性后备模型参数
                 fallback_intercept_ms=float(os.getenv('VLLM_SLA_FALLBACK_INTERCEPT', '8.7')),
                 fallback_slope_ms_per_token=float(os.getenv('VLLM_SLA_FALLBACK_SLOPE', '0.0215')),
                 
                 # 调试和监控
-                verbose_logging=os.getenv('VLLM_SLA_VERBOSE', 'false').lower() == 'true',
+                verbose_logging=os.getenv('VLLM_SLA_VERBOSE', 'true').lower() == 'true',
                 performance_logging=os.getenv('VLLM_SLA_PERF_LOG', 'true').lower() == 'true',
             )
             

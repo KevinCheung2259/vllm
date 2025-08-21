@@ -151,7 +151,7 @@ class PerformancePredictor:
         self.performance_buffer.append(observation)
         
         if self.config.verbose_logging:
-            logger.info(f"Added observation: B={batch_size}, S={total_tokens}, T={actual_latency:.2f}ms")
+            logger.debug(f"Added observation: B={batch_size}, S={total_tokens}, T={actual_latency:.2f}ms")
         
         # 如果使用预拟合模型，不进行在线更新
         if self.config.use_pretrained_model and self.is_ready:
@@ -180,7 +180,7 @@ class PerformancePredictor:
                 self.stats['model_predictions'] += 1
                 
                 if self.config.verbose_logging:
-                    logger.info(f"Model prediction: B={batch_size}, S={total_tokens} -> {prediction:.2f}ms")
+                    logger.debug(f"Model prediction: B={batch_size}, S={total_tokens} -> {prediction:.2f}ms")
                 
                 return max(prediction, 0.1)  # 确保预测值为正
                 
@@ -223,7 +223,7 @@ class PerformancePredictor:
             tokens = max(1, min(tokens, 4096))  # 限制在合理范围内
             
             if self.config.verbose_logging:
-                logger.info(f"Solved tokens: B={batch_size}, T_target={target_latency:.2f}ms -> {tokens} tokens")
+                logger.debug(f"Solved tokens: B={batch_size}, T_target={target_latency:.2f}ms -> {tokens} tokens")
             
             return tokens
             
@@ -287,6 +287,7 @@ class PerformancePredictor:
         
         # 如果模型未初始化，直接更新
         if not self.is_ready:
+            logger.info("Model not initialized, updating model")
             return True
         
         # 检查预测精度是否下降
@@ -333,7 +334,6 @@ class PerformancePredictor:
             df = pd.DataFrame(data)
             
             # 添加必要的列名映射以兼容ThroughputSaturationModel
-            df['chunk_sizes'] = df.apply(lambda row: [1] * row['batch_size'], axis=1)
             df['model_run_duration_ms'] = df['latency']
             
             # 创建并拟合模型
@@ -426,3 +426,18 @@ class PerformancePredictor:
         finally:
             # 恢复原始配置
             self.config.use_pretrained_model = original_use_pretrained
+
+    def get_p_max(self) -> Optional[float]:
+        """获取吞吐饱和模型中的 P_max 参数（tokens/ms）。
+        若模型未就绪或不可用，返回 None。
+        """
+        try:
+            if self.is_ready and self.model is not None and getattr(self.model, 'params', None) is not None:
+                try:
+                    idx = self.model.param_names.index('P_max')
+                except Exception:
+                    idx = 0
+                return float(self.model.params[idx])
+        except Exception:
+            pass
+        return None

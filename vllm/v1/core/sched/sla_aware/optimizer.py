@@ -89,14 +89,14 @@ class SLAOptimizer:
         
         try:
             # 限制搜索范围以确保实时性
-            batch_search_limit = min(max_batch_size, self.config.max_batch_search)
+            batch_search_limit = len(running_requests) + len(waiting_requests)
             min_batch_size = max(1, len(running_requests))
             
             best_result = None
             min_error = float('inf')
             
             if self.config.verbose_logging:
-                logger.info(f"Starting optimization: target={target_latency:.1f}ms, "
+                logger.debug(f"Starting optimization: target={target_latency:.1f}ms, "
                            f"running={len(running_requests)}, waiting={len(waiting_requests)}")
             
             # Phase 1: 穷举搜索batch size并为每个候选配置执行贪心调度
@@ -167,7 +167,7 @@ class SLAOptimizer:
                 self._update_stats(optimization_time_ms)
                 
                 if self.config.verbose_logging:
-                    logger.info(f"Optimization success: B={best_result.actual_batch_size}, "
+                    logger.debug(f"Optimization success: B={best_result.actual_batch_size}, "
                                f"S={sum(best_result.allocation.values())}, "
                                f"T_pred={best_result.predicted_latency:.1f}ms, "
                                f"error={min_error:.1f}ms, time={optimization_time_ms:.2f}ms")
@@ -378,7 +378,7 @@ class SLAOptimizer:
         adaptive_target = max(min_effective, min(self.config.slo_tpot_ms, target))
         
         if self.config.verbose_logging:
-            logger.info(f"Adaptive target latency: Q={queue_length} -> {adaptive_target:.1f}ms")
+            logger.debug(f"Adaptive target latency: Q={queue_length} -> {adaptive_target:.1f}ms")
         
         return adaptive_target
     
