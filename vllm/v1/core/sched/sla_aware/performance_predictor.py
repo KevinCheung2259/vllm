@@ -8,7 +8,7 @@ import sys
 import os
 from pathlib import Path
 from collections import deque
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, Union
 import time
 import pandas as pd
 import numpy as np
@@ -16,15 +16,19 @@ import logging
 
 # 导入本地的吞吐饱和模型
 try:
-    from .throughput_model import ThroughputSaturationModel
+    from .throughput_model import ThroughputSaturationModel, StableClusterModel
     MODEL_AVAILABLE = True
 except ImportError as e:
     logger = logging.getLogger(__name__)
     logger.warning(f"ThroughputSaturationModel import failed: {e}")
     ThroughputSaturationModel = None
+    StableClusterModel = None
     MODEL_AVAILABLE = False
 
-from .config import SLASchedulerConfig
+try:
+    from .config import SLASchedulerConfig
+except ImportError:
+    from config import SLASchedulerConfig
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +49,7 @@ class PerformancePredictor:
             config: SLA调度器配置
         """
         self.config = config
-        self.model: Optional[ThroughputSaturationModel] = None
+        self.model: Optional[Union[ThroughputSaturationModel, 'StableClusterModel']] = None
         self.performance_buffer: deque = deque(maxlen=config.max_buffer_size)
         self.last_update_time = 0
         self.is_ready = False
@@ -77,7 +81,8 @@ class PerformancePredictor:
         
         # 添加详细的初始化日志
         if self.config.verbose_logging:
-            logger.info(f"Initializing model: use_pretrained={self.config.use_pretrained_model}, "
+            logger.info(f"Initializing model: use_stable={self.config.use_stable_cluster_model}, "
+                       f"use_pretrained={self.config.use_pretrained_model}, "
                        f"pretrained_path='{self.config.pretrained_model_path}'")
         
         # 尝试加载预拟合模型
@@ -94,13 +99,20 @@ class PerformancePredictor:
                         logger.info(f"Resolved relative path to: {model_path}")
                 
                 if os.path.exists(model_path):
-                    self.model = ThroughputSaturationModel(verbose=self.config.verbose_logging)
+                    # 根据配置选择模型类型
+                    if self.config.use_stable_cluster_model:
+                        self.model = StableClusterModel(verbose=self.config.verbose_logging)
+                        model_type = "StableClusterModel"
+                    else:
+                        self.model = ThroughputSaturationModel(verbose=self.config.verbose_logging)
+                        model_type = "ThroughputSaturationModel"
+                    
                     self.model.load_model(model_path)
                     self.is_ready = True
                     self._update_count = 1  # 标记为已有模型
                     
-                    logger.info(f"Loaded pretrained model from: {model_path}")
-                    logger.info(f"Model R²: {self.model.fit_metrics.get('r2', 'N/A')}")
+                    logger.info(f"Loaded pretrained {model_type} from: {model_path}")
+                    logger.info(f"Model R²: {self.model.fit_metrics.get('r2', 'N/A')}, P_max: {self.model.P_max}")
                     
                     # 更新统计信息
                     self.stats['last_r2'] = self.model.fit_metrics.get('r2', 0.0)
@@ -117,10 +129,15 @@ class PerformancePredictor:
                     logger.info("No pretrained model path specified")
         
         # 如果没有预拟合模型，准备在线训练
-        if MODEL_AVAILABLE:
-            self.model = ThroughputSaturationModel(verbose=self.config.verbose_logging)
+        if MODEL_AVAILABLE and self.config.enabled:
+            if self.config.use_stable_cluster_model:
+                self.model = StableClusterModel(verbose=self.config.verbose_logging)
+                model_type = "StableClusterModel"
+            else:
+                self.model = ThroughputSaturationModel(verbose=self.config.verbose_logging)
+                model_type = "ThroughputSaturationModel"
             if self.config.verbose_logging:
-                logger.info("Prepared for online model training")
+                logger.info(f"Prepared for online {model_type} training")
     
     def add_observation(self, batch_size: int, total_tokens: int, 
                        actual_latency: float, timestamp: Optional[float] = None) -> None:
@@ -432,12 +449,8 @@ class PerformancePredictor:
         若模型未就绪或不可用，返回 None。
         """
         try:
-            if self.is_ready and self.model is not None and getattr(self.model, 'params', None) is not None:
-                try:
-                    idx = self.model.param_names.index('P_max')
-                except Exception:
-                    idx = 0
-                return float(self.model.params[idx])
+            if self.is_ready and self.model is not None and getattr(self.model, 'P_max', None) is not None:
+                return float(self.model.P_max)
         except Exception:
             pass
         return None

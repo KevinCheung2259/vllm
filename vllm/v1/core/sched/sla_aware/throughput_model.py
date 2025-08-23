@@ -37,6 +37,7 @@ class ThroughputSaturationModel:
         """
         self.verbose = verbose
         self.is_fitted = False
+        self.P_max = None
         self.params = None
         self.scales = None
         self.fit_metrics = None
@@ -118,7 +119,7 @@ class ThroughputSaturationModel:
     def _preprocess_data(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """数据预处理：提取特征、过滤异常值、检查有效性"""
         if self.verbose:
-            logger.info("开始数据预处理...")
+            logger.info("Starting data preprocessing...")
             
         # 提取特征
         B, S, T = self._extract_features(df)
@@ -137,13 +138,13 @@ class ThroughputSaturationModel:
         B, S, T = B[valid_mask], S[valid_mask], T[valid_mask]
         
         if self.verbose:
-            logger.info(f"数据过滤: {initial_count} -> {len(T)} 样本")
-            logger.info(f"Batch Size 范围: [{B.min():.1f}, {B.max():.1f}]")
-            logger.info(f"Total Tokens 范围: [{S.min():.1f}, {S.max():.1f}]")
-            logger.info(f"延迟范围: [{T.min():.2f}, {T.max():.2f}] ms")
+            logger.info(f"Data filtering: {initial_count} -> {len(T)} samples")
+            logger.info(f"Batch Size range: [{B.min():.1f}, {B.max():.1f}]")
+            logger.info(f"Total Tokens range: [{S.min():.1f}, {S.max():.1f}]")
+            logger.info(f"Latency range: [{T.min():.2f}, {T.max():.2f}] ms")
         
         if len(T) < 20:
-            raise ValueError(f"有效样本数过少: {len(T)}，建议至少20个样本")
+            raise ValueError(f"Insufficient valid samples: {len(T)}, recommend at least 20 samples")
             
         return B, S, T
     
@@ -162,7 +163,7 @@ class ThroughputSaturationModel:
         scales = (B_scale, S_scale)
         
         if self.verbose:
-            logger.info(f"特征归一化: B_scale={B_scale:.2f}, S_scale={S_scale:.2f}")
+            logger.info(f"Feature normalization: B_scale={B_scale:.2f}, S_scale={S_scale:.2f}")
             
         return B_norm, S_norm, scales
     
@@ -197,14 +198,14 @@ class ThroughputSaturationModel:
         upper_bounds = [1e6, 10.0, 10.0, 1e3, 1e2, 1e3, 1e1, 1e1]
         
         if self.verbose:
-            logger.info(f"参数初始化: P_max={P_max_init:.3f}, w_1={w_1_init:.6f}")
+            logger.info(f"Parameter initialization: P_max={P_max_init:.3f}, w_1={w_1_init:.6f}")
             
         return p0, lower_bounds, upper_bounds
     
     def fit(self, df: pd.DataFrame) -> 'ThroughputSaturationModel':
         """拟合模型"""
         if self.verbose:
-            logger.info("开始模型拟合...")
+            logger.info("Starting model fitting...")
             
         # 数据预处理
         B, S, T = self._preprocess_data(df)
@@ -237,6 +238,7 @@ class ThroughputSaturationModel:
             
             # 计算拟合质量指标
             T_pred = self.latency_model((B_norm, S_norm), *popt)
+            self.P_max = popt[0]
             self.fit_metrics = {
                 'r2': r2_score(T, T_pred),
                 'rmse': np.sqrt(mean_squared_error(T, T_pred)),
@@ -248,20 +250,20 @@ class ThroughputSaturationModel:
                 self._print_fit_results()
                 
         except Exception as e:
-            logger.error(f"拟合失败: {e}")
+            logger.error(f"Fitting failed: {e}")
             raise
             
         return self
     
     def _print_fit_results(self):
         """打印拟合结果"""
-        logger.info("拟合完成!")
+        logger.info("Fitting completed!")
         logger.info(f"R² = {self.fit_metrics['r2']:.4f}")
         logger.info(f"RMSE = {self.fit_metrics['rmse']:.3f} ms")
         logger.info(f"MAE = {self.fit_metrics['mae']:.3f} ms")
-        logger.info(f"样本数 = {self.fit_metrics['n_samples']}")
+        logger.info(f"Sample count = {self.fit_metrics['n_samples']}")
         
-        logger.info("\n拟合参数:")
+        logger.info("\nFitted parameters:")
         for i, (name, desc) in enumerate(zip(self.param_names, self.param_descriptions.values())):
             logger.info(f"{name:8s} = {self.params[i]:10.6f}  # {desc}")
     
@@ -269,7 +271,7 @@ class ThroughputSaturationModel:
                 total_tokens: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
         """预测延迟"""
         if not self.is_fitted:
-            raise ValueError("模型尚未拟合，请先调用 fit() 方法")
+            raise ValueError("Model not fitted yet, please call fit() method first")
             
         # 转换为数组
         B = np.asarray(batch_size)
@@ -288,7 +290,7 @@ class ThroughputSaturationModel:
     def get_model_summary(self) -> Dict:
         """获取模型摘要信息"""
         if not self.is_fitted:
-            raise ValueError("模型尚未拟合，请先调用 fit() 方法")
+            raise ValueError("Model not fitted yet, please call fit() method first")
             
         summary = {
             'parameters': dict(zip(self.param_names, self.params)),
@@ -301,9 +303,10 @@ class ThroughputSaturationModel:
     def save_model(self, filepath: str):
         """保存模型到文件"""
         if not self.is_fitted:
-            raise ValueError("模型尚未拟合，请先调用 fit() 方法")
+            raise ValueError("Model not fitted yet, please call fit() method first")
             
         model_data = {
+            'P_max': self.P_max,
             'params': self.params,
             'scales': self.scales,
             'fit_metrics': self.fit_metrics,
@@ -330,7 +333,11 @@ class ThroughputSaturationModel:
             
         with open(filepath, 'rb') as f:
             model_data = pickle.load(f)
-            
+        
+        try:
+            self.P_max = model_data['P_max']
+        except:
+            self.P_max = model_data['params'][0]
         self.params = model_data['params']
         self.scales = model_data['scales'] 
         self.fit_metrics = model_data['fit_metrics']
@@ -339,7 +346,7 @@ class ThroughputSaturationModel:
         
         if self.verbose:
             logger.info(f"Model loaded: {filepath}")
-            logger.info(f"Model R²: {self.fit_metrics['r2']:.4f}")
+            logger.info(f"Model R²: {self.fit_metrics['r2']:.4f}, P_max: {self.P_max:.6f} tokens/ms")
     
     @classmethod
     def load_from_file(cls, filepath: str, verbose: bool = True) -> 'ThroughputSaturationModel':
@@ -351,6 +358,7 @@ class ThroughputSaturationModel:
     def get_model_parameters(self) -> Dict:
         """获取模型参数"""
         return {
+            'P_max': self.P_max,
             'params': self.params,
             'scales': self.scales,
             'fit_metrics': self.fit_metrics,
@@ -358,3 +366,207 @@ class ThroughputSaturationModel:
             'param_names': self.param_names,
             'param_descriptions': self.param_descriptions
         }
+
+
+class StableClusterModel:
+    """稳定的集群调度性能模型
+    
+    使用两阶段拟合方法确保P_max参数稳定性，专为异构集群调度设计。
+    """
+    
+    def __init__(self, verbose: bool = True):
+        self.verbose = verbose
+        self.is_fitted = False
+        self.P_max = None
+        self.params = None
+        self.scales = None
+        self.fit_metrics = None
+        
+        self.param_names = ['k_B', 'k_S', 'tau_B', 'tau_S', 'T_base']
+    
+    def _estimate_peak_throughput(self, B: np.ndarray, S: np.ndarray, T: np.ndarray) -> float:
+        """独立估计峰值吞吐量P_max"""
+        large_batch_mask = (B >= np.percentile(B, 80)) & (S >= np.percentile(S, 80))
+        
+        if np.sum(large_batch_mask) < 10:
+            effective_throughput = S / T
+        else:
+            effective_throughput = S[large_batch_mask] / T[large_batch_mask]
+        
+        P_max_estimate = np.percentile(effective_throughput, 90)
+        
+        if self.verbose:
+            logger.info(f"Peak throughput estimation: {P_max_estimate:.4f} tokens/ms")
+            
+        return P_max_estimate
+    
+    @staticmethod
+    def stable_latency_model(X: Tuple[np.ndarray, np.ndarray], 
+                           k_B: float, k_S: float, tau_B: float, tau_S: float, T_base: float,
+                           P_max_fixed: float) -> np.ndarray:
+        """稳定的延迟模型，P_max作为固定参数传入"""
+        B, S = X
+        
+        eff_B = 1.0 - np.exp(-k_B * B)
+        eff_S = 1.0 - np.exp(-k_S * S)
+        
+        eff_B = np.maximum(eff_B, 1e-6)
+        eff_S = np.maximum(eff_S, 1e-6)
+        
+        latency = T_base / (eff_B * eff_S) + tau_B * B + tau_S * S
+        
+        return latency
+    
+    def _extract_features(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """从DataFrame中提取特征"""
+        # 复用ThroughputSaturationModel的特征提取逻辑
+        temp_model = ThroughputSaturationModel(verbose=False)
+        return temp_model._extract_features(df)
+    
+    def _preprocess_data(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """数据预处理"""
+        temp_model = ThroughputSaturationModel(verbose=self.verbose)
+        return temp_model._preprocess_data(df)
+    
+    def _normalize_features(self, B: np.ndarray, S: np.ndarray) -> Tuple[np.ndarray, np.ndarray, Tuple[float, float]]:
+        """特征归一化"""
+        temp_model = ThroughputSaturationModel(verbose=self.verbose)
+        return temp_model._normalize_features(B, S)
+    
+    def fit(self, df: pd.DataFrame) -> 'StableClusterModel':
+        """两阶段拟合方法：1.估计P_max 2.拟合其他参数"""
+        if self.verbose:
+            logger.info("Starting stable cluster scheduling model fitting...")
+            
+        B, S, T = self._preprocess_data(df)
+        B_norm, S_norm, scales = self._normalize_features(B, S)
+        self.scales = scales
+        
+        # 阶段1：独立估计P_max
+        self.P_max = self._estimate_peak_throughput(B_norm, S_norm, T)
+        
+        # 阶段2：固定P_max，拟合其他参数
+        T_median = np.median(T)
+        p0 = [0.5, 0.2, 1.0, 0.1, T_median * 0.5]
+        lower_bounds = [0.01, 0.001, 0.0, 0.0, 0.1]
+        upper_bounds = [5.0, 2.0, 20.0, 2.0, 200.0]
+        
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                popt, pcov = curve_fit(
+                    lambda X, *params: self.stable_latency_model(X, *params, self.P_max),
+                    xdata=(B_norm, S_norm),
+                    ydata=T,
+                    p0=p0,
+                    bounds=(lower_bounds, upper_bounds),
+                    maxfev=15000,
+                    method='trf'
+                )
+                
+            self.params = popt
+            self.param_cov = pcov
+            self.is_fitted = True
+            
+            T_pred = self.stable_latency_model((B_norm, S_norm), *popt, self.P_max)
+            self.fit_metrics = {
+                'r2': r2_score(T, T_pred),
+                'rmse': np.sqrt(mean_squared_error(T, T_pred)),
+                'mae': mean_absolute_error(T, T_pred),
+                'n_samples': len(T)
+            }
+            
+            if self.verbose:
+                self._print_fit_results()
+                
+        except Exception as e:
+            logger.error(f"Stable cluster scheduling model fitting failed: {e}")
+            raise
+            
+        return self
+    
+    def _print_fit_results(self):
+        """打印拟合结果"""
+        logger.info("Stable cluster scheduling model fitting completed!")
+        logger.info(f"R² = {self.fit_metrics['r2']:.4f}")
+        logger.info(f"RMSE = {self.fit_metrics['rmse']:.3f} ms")
+        logger.info(f"MAE = {self.fit_metrics['mae']:.3f} ms")
+        logger.info(f"Sample count = {self.fit_metrics['n_samples']}")
+        logger.info(f"P_max = {self.P_max:.6f} tokens/ms (stable estimation)")
+    
+    def predict(self, batch_size: Union[float, np.ndarray], 
+                total_tokens: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
+        """预测延迟"""
+        if not self.is_fitted:
+            raise ValueError("Stable cluster model not fitted yet")
+            
+        B = np.asarray(batch_size)
+        S = np.asarray(total_tokens)
+        
+        B_scale, S_scale = self.scales
+        B_norm = B / B_scale
+        S_norm = S / S_scale
+        
+        latency = self.stable_latency_model((B_norm, S_norm), *self.params, self.P_max)
+        
+        return latency
+    
+    def get_model_summary(self) -> Dict:
+        """获取模型摘要信息"""
+        if not self.is_fitted:
+            raise ValueError("Stable cluster model not fitted yet")
+            
+        return {
+            'parameters': {'P_max': self.P_max, **dict(zip(self.param_names, self.params))},
+            'metrics': self.fit_metrics,
+            'scales': {'batch_scale': self.scales[0], 'token_scale': self.scales[1]},
+            'model_type': 'StableClusterModel'
+        }
+    
+    def save_model(self, filepath: str):
+        """保存模型"""
+        if not self.is_fitted:
+            raise ValueError("Stable cluster model not fitted yet")
+            
+        model_data = {
+            'P_max': self.P_max,
+            'params': self.params,
+            'scales': self.scales,
+            'fit_metrics': self.fit_metrics,
+            'param_names': self.param_names,
+            'model_type': 'StableClusterModel'
+        }
+        
+        dirname = os.path.dirname(filepath)
+        if dirname:
+            os.makedirs(dirname, exist_ok=True)
+        
+        with open(filepath, 'wb') as f:
+            pickle.dump(model_data, f)
+            
+        if self.verbose:
+            logger.info(f"Stable cluster scheduling model saved: {filepath}")
+    
+    def load_model(self, filepath: str):
+        """加载模型"""
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"Stable cluster model file not found: {filepath}")
+            
+        with open(filepath, 'rb') as f:
+            model_data = pickle.load(f)
+            
+        self.P_max = model_data['P_max']
+        self.params = model_data['params']
+        self.scales = model_data['scales'] 
+        self.fit_metrics = model_data['fit_metrics']
+        self.is_fitted = True
+        
+        if self.verbose:
+            logger.info(f"Stable cluster scheduling model loaded: {filepath}")
+    
+    @classmethod
+    def load_from_file(cls, filepath: str, verbose: bool = True) -> 'StableClusterModel':
+        """类方法：从文件加载稳定集群模型"""
+        model = cls(verbose=verbose)
+        model.load_model(filepath)
+        return model

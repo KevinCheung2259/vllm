@@ -31,6 +31,7 @@ class SLASchedulerConfig:
     model_confidence_threshold: float = 0.8 # 模型R²阈值，低于此值使用线性后备
     
     # === 预训练模型配置 ===
+    use_stable_cluster_model: bool = False  # 是否使用稳定集群模型
     use_pretrained_model: bool = True      # 是否优先使用预训练模型
     pretrained_model_path: str = "sla_scheduler_model.pkl"         # 预训练模型文件路径（空则使用默认）
     save_trained_model: bool = True         # 是否保存训练后的模型
@@ -92,18 +93,19 @@ class SLASchedulerConfig:
                 
                 # 预训练模型配置
                 # 默认使用预训练模型时，就不会进行在线训练
-                use_pretrained_model=os.getenv('VLLM_SLA_USE_PRETRAINED', 'false').lower() == 'true',
-                pretrained_model_path=os.getenv('VLLM_SLA_PRETRAINED_PATH', 'sla_scheduler_model_h100.pkl'),
-                save_trained_model=os.getenv('VLLM_SLA_SAVE_MODEL', 'true').lower() == 'true',
-                model_save_path=os.getenv('VLLM_SLA_MODEL_SAVE_PATH', 'sla_scheduler_model_v2.pkl'),
+                use_stable_cluster_model=os.getenv('VLLM_SLA_USE_STABLE_MODEL', 'true').lower() == 'true',
+                use_pretrained_model=os.getenv('VLLM_SLA_USE_PRETRAINED', 'true').lower() == 'true',
+                pretrained_model_path=os.getenv('VLLM_SLA_PRETRAINED_PATH', 'stable_cluster_model_h100.pkl'),
+                save_trained_model=os.getenv('VLLM_SLA_SAVE_MODEL', 'false').lower() == 'true',
+                model_save_path=os.getenv('VLLM_SLA_MODEL_SAVE_PATH', 'stable_sla_scheduler_model_v2.pkl'),
                 
                 # 线性后备模型参数
                 fallback_intercept_ms=float(os.getenv('VLLM_SLA_FALLBACK_INTERCEPT', '8.7')),
                 fallback_slope_ms_per_token=float(os.getenv('VLLM_SLA_FALLBACK_SLOPE', '0.0215')),
                 
                 # 调试和监控
-                verbose_logging=os.getenv('VLLM_SLA_VERBOSE', 'true').lower() == 'true',
-                performance_logging=os.getenv('VLLM_SLA_PERF_LOG', 'true').lower() == 'true',
+                verbose_logging=os.getenv('VLLM_SLA_VERBOSE', 'false').lower() == 'true',
+                performance_logging=os.getenv('VLLM_SLA_PERF_LOG', 'false').lower() == 'true',
             )
             
             # 验证配置合理性
@@ -137,7 +139,7 @@ class SLASchedulerConfig:
             
         if self.optimization_timeout_ms <= 0:
             raise ValueError("optimization_timeout_ms must be positive")
-    
+            
     def to_dict(self) -> dict:
         """转换为字典，便于日志记录和序列化"""
         return {
@@ -152,6 +154,7 @@ class SLASchedulerConfig:
             'use_pretrained_model': self.use_pretrained_model,
             'pretrained_model_path': self.pretrained_model_path,
             'save_trained_model': self.save_trained_model,
+            'use_stable_cluster_model': self.use_stable_cluster_model,
         }
     
     def __str__(self) -> str:
@@ -159,4 +162,9 @@ class SLASchedulerConfig:
         pretrained_info = f", pretrained={self.use_pretrained_model}"
         if self.use_pretrained_model and self.pretrained_model_path:
             pretrained_info += f"({self.pretrained_model_path})"
-        return f"SLAConfig(enabled={self.enabled}, slo_tpot={self.slo_tpot_ms}ms, min_batch={self.min_batch_time_ms}ms{pretrained_info})"
+            
+        stable_info = ""
+        if self.use_stable_cluster_model:
+            stable_info = f", stable_model={self.use_stable_cluster_model}"
+            
+        return f"SLAConfig(enabled={self.enabled}, slo_tpot={self.slo_tpot_ms}ms, min_batch={self.min_batch_time_ms}ms{pretrained_info}{stable_info})"
