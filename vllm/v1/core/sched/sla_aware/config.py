@@ -32,7 +32,7 @@ class SLASchedulerConfig:
     
     # === 预训练模型配置 ===
     use_stable_cluster_model: bool = False  # 是否使用稳定集群模型
-    use_pretrained_model: bool = True      # 是否优先使用预训练模型
+    use_pretrained_model: bool = True       # 是否优先使用预训练模型
     pretrained_model_path: str = "sla_scheduler_model.pkl"         # 预训练模型文件路径（空则使用默认）
     save_trained_model: bool = True         # 是否保存训练后的模型
     model_save_path: str = "sla_scheduler_model.pkl"  # 模型保存路径
@@ -70,7 +70,7 @@ class SLASchedulerConfig:
         try:
             config = cls(
                 # 功能开关
-                enabled=os.getenv('VLLM_SLA_SCHEDULER_ENABLED', 'true').lower() == 'true',
+                enabled=os.getenv('VLLM_SLA_SCHEDULER_ENABLED', 'false').lower() == 'true',
                 fallback_on_error=os.getenv('VLLM_SLA_FALLBACK_ON_ERROR', 'true').lower() == 'true',
                 
                 # 性能模型配置
