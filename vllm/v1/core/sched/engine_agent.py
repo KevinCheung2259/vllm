@@ -53,24 +53,23 @@ class EngineAgent:
     """
     ELRAR Engine Agent
     
-    支持两种配置方式：
-    1. 通过 ELRARConfig 配置对象（推荐）
-    2. 通过环境变量（向后兼容）
+    仅支持通过环境变量进行配置：
     
-    环境变量控制（向后兼容）：
+    环境变量控制：
     - VLLM_ENABLE_ELRAR: 启用ELRAR状态采集
+    - VLLM_ELRAR_NETWORK_MODE: 网络模式 ("unicast" | "broadcast")
+    - VLLM_ELRAR_GATEWAY_HOST: State Gateway 主机地址（点播模式）
+    - VLLM_ELRAR_GATEWAY_PORT: State Gateway 端口（点播模式）
+    - VLLM_ELRAR_BROADCAST_PORT: 广播端口（广播模式）
     - VLLM_ELRAR_PUSH_INTERVAL: 推送间隔(ms)
     - VLLM_ELRAR_ENGINE_ID: 引擎标识符（推荐设置为该引擎对外服务的URL，便于Router对齐）
     - VLLM_ENGINE_URL/VLLM_API_BASE: 可用于自动推断URL
     - VLLM_PORT/PORT/VLLM_SCHEME: 用于自动拼装URL（默认http与8000）
     """
     
-    def __init__(self, config: Optional[ELRARConfig] = None):
-        # 优先使用配置对象，其次使用环境变量
-        if config is not None:
-            self._init_from_config(config)
-        else:
-            self._init_from_env()
+    def __init__(self):
+        # 只使用环境变量初始化
+        self._init_from_env()
         
         if not self.enabled:
             logger.info("ELRAR Engine Agent disabled")
@@ -99,30 +98,14 @@ class EngineAgent:
         if self.enabled:
             self._start_push_thread()
 
-    def _init_from_config(self, config: ELRARConfig):
-        """从配置对象初始化"""
-        self.enabled = config.enabled
-        self.network_mode = config.network_mode
-        self.gateway_host = config.gateway_host
-        self.gateway_port = config.gateway_port
-        self.broadcast_port = config.broadcast_port
-        self.push_interval = config.push_interval
-        
-        # 引擎ID：优先使用配置，其次自动推断
-        if config.engine_id:
-            self.engine_id = config.engine_id
-        else:
-            self.engine_id = self._infer_engine_url() or f'engine-{os.getpid()}'
-
     def _init_from_env(self):
-        """从环境变量初始化（向后兼容）"""
+        """从环境变量初始化"""
         self.enabled = os.getenv('VLLM_ENABLE_ELRAR', 'true').lower() == 'true'
         self.network_mode = os.getenv('VLLM_ELRAR_NETWORK_MODE', 'unicast')
         self.gateway_host = os.getenv('VLLM_ELRAR_GATEWAY_HOST')
         self.gateway_port = int(os.getenv('VLLM_ELRAR_GATEWAY_PORT', '9999'))
         self.broadcast_port = int(os.getenv('VLLM_ELRAR_BROADCAST_PORT', '9999'))
         self.push_interval = int(os.getenv('VLLM_ELRAR_PUSH_INTERVAL', '200'))  # ms
-        
         # 优先显式指定，其次自动推断为可达URL，最后退回到进程标识
         self.engine_id = (
             os.getenv('VLLM_ELRAR_ENGINE_ID')

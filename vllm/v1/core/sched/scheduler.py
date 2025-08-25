@@ -220,15 +220,10 @@ class Scheduler(SchedulerInterface):
         self.elrar_agent = None
         if ELRAR_AGENT_AVAILABLE:
             try:
-                # 优先从配置中读取ELRAR配置
-                elrar_config = None
-                if hasattr(self.vllm_config, 'elrar_config') and self.vllm_config.elrar_config:
-                    elrar_config = self.vllm_config.elrar_config
-                    logger.info(f"Using ELRAR config from VllmConfig: {elrar_config}")
-                else:
-                    logger.info("No ELRAR config found in VllmConfig, using environment variables")
+                # ELRAR Agent现在只使用环境变量进行配置
+                logger.info("ELRAR Engine Agent using environment variables for configuration")
                 
-                self.elrar_agent = EngineAgent(config=elrar_config)
+                self.elrar_agent = EngineAgent()
                 if self.elrar_agent.enabled:
                     logger.info(f"ELRAR Engine Agent initialized: {self.elrar_agent.engine_id}")
             except Exception as e:

@@ -95,7 +95,7 @@ class SLASchedulerConfig:
                 # 默认使用预训练模型时，就不会进行在线训练
                 use_stable_cluster_model=os.getenv('VLLM_SLA_USE_STABLE_MODEL', 'true').lower() == 'true',
                 use_pretrained_model=os.getenv('VLLM_SLA_USE_PRETRAINED', 'true').lower() == 'true',
-                pretrained_model_path=os.getenv('VLLM_SLA_PRETRAINED_PATH', 'stable_cluster_model_h100.pkl'),
+                pretrained_model_path=os.getenv('VLLM_SLA_PRETRAINED_PATH', 'stable_model_h100.pkl'),
                 save_trained_model=os.getenv('VLLM_SLA_SAVE_MODEL', 'false').lower() == 'true',
                 model_save_path=os.getenv('VLLM_SLA_MODEL_SAVE_PATH', 'stable_sla_scheduler_model_v2.pkl'),
                 
