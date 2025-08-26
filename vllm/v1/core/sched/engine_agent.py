@@ -270,8 +270,13 @@ class EngineAgent:
     def _start_push_thread(self) -> None:
         """启动后台推送线程（UDP广播，零阻塞）"""
         def push_worker():
+            last_heartbeat_time = 0
+            heartbeat_interval = 2000  # 2秒发送一次心跳状态
+            
             while self.enabled:
                 try:
+                    current_time = int(time.time() * 1000)
+                    
                     # 从队列获取状态（非阻塞）
                     states_to_send = []
                     with self._queue_lock:
@@ -314,6 +319,28 @@ class EngineAgent:
                                     logger.debug(f"ELRAR state broadcasted: {state.engine_id}")
                         except Exception as e:
                             logger.debug(f"ELRAR UDP send failed: {e}")
+                    
+                    # 如果没有调度数据，定期发送心跳状态
+                    if not states_to_send and (current_time - last_heartbeat_time) >= heartbeat_interval:
+                        try:
+                            heartbeat_state = EngineState(
+                                engine_id=self.engine_id,
+                                timestamp_ms=current_time,
+                                latency_pred_ms=0.0,  # 心跳时延迟为0
+                                scheduling_mode="latency_optimized",  # 心跳时使用延迟优化模式
+                                pending_tokens_total=0,  # 心跳时无等待任务
+                                kv_cache_free_blocks=-1,  # 心跳时KV缓存信息未知
+                                kv_cache_total_blocks=-1,
+                                engine_capacity=0.0,  # 心跳时能力基线为0
+                            )
+                            
+                            # 发送心跳状态
+                            self._send_state_immediately(heartbeat_state)
+                            last_heartbeat_time = current_time
+                            logger.debug(f"ELRAR heartbeat state sent: {self.engine_id}")
+                            
+                        except Exception as e:
+                            logger.debug(f"ELRAR heartbeat send failed: {e}")
                     
                     # 短暂休眠，避免CPU占用过高
                     time.sleep(0.01)
