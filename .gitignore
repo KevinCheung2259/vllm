@@ -179,7 +179,7 @@ cython_debug/
 *.csv
 
 # Python pickle files
-*.pkl
+# *.pkl
 
 # Sphinx documentation
 _build/
