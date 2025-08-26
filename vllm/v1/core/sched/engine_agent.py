@@ -97,6 +97,8 @@ class EngineAgent:
         
         if self.enabled:
             self._start_push_thread()
+            # 立即发送初始化状态，让 cluster router 感知到引擎启动
+            self._send_initialization_state()
 
     def _init_from_env(self):
         """从环境变量初始化"""
@@ -324,6 +326,67 @@ class EngineAgent:
         self._push_thread = threading.Thread(target=push_worker, daemon=True)
         self._push_thread.start()
         logger.info("ELRAR push thread started (UDP broadcast mode)")
+
+    def _send_initialization_state(self) -> None:
+        """发送初始化状态，让 cluster router 感知到引擎启动"""
+        try:
+            current_time = int(time.time() * 1000)
+            init_state = EngineState(
+                engine_id=self.engine_id,
+                timestamp_ms=current_time,
+                latency_pred_ms=0.0,  # 初始化时延迟为0
+                scheduling_mode="latency_optimized",  # 初始化时使用平衡模式
+                pending_tokens_total=0,  # 初始化时无等待任务
+                kv_cache_free_blocks=-1,  # 初始化时KV缓存信息未知
+                kv_cache_total_blocks=-1,
+                engine_capacity=0.0,  # 初始化时能力基线为0
+            )
+            
+            # 直接发送初始化状态，不经过队列
+            self._send_state_immediately(init_state)
+            logger.info(f"ELRAR initialization state sent: {self.engine_id}")
+            
+        except Exception as e:
+            logger.warning(f"ELRAR initialization state send failed: {e}")
+
+    def _send_state_immediately(self, state: EngineState) -> None:
+        """立即发送状态，不经过队列（用于初始化状态）"""
+        if not self._udp_socket:
+            return
+            
+        try:
+            # 序列化状态
+            payload = json.dumps(asdict(state), ensure_ascii=False)
+            data = payload.encode('utf-8')
+            
+            if self.network_mode == "unicast":
+                # UDP点播到指定的 State Gateway
+                if self.gateway_host:
+                    try:
+                        self._udp_socket.sendto(data, (self.gateway_host, self.gateway_port))
+                        logger.debug(f"ELRAR state sent immediately to {self.gateway_host}:{self.gateway_port}")
+                    except Exception as e:
+                        logger.debug(f"ELRAR UDP unicast failed: {e}")
+                else:
+                    logger.warning("ELRAR: gateway_host not configured for unicast mode")
+            else:
+                # UDP广播到所有可用地址
+                broadcast_addresses = [
+                    ('<broadcast>', self.broadcast_port),
+                    ('127.0.0.1', self.broadcast_port),
+                    ('localhost', self.broadcast_port)
+                ]
+                
+                for addr, port in broadcast_addresses:
+                    try:
+                        self._udp_socket.sendto(data, (addr, port))
+                    except Exception:
+                        continue  # 忽略单个地址的发送失败
+                
+                logger.debug(f"ELRAR state broadcasted immediately: {state.engine_id}")
+                
+        except Exception as e:
+            logger.debug(f"ELRAR immediate UDP send failed: {e}")
     
     def shutdown(self) -> None:
         """关闭Agent"""

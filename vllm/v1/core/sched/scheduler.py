@@ -180,9 +180,9 @@ class Scheduler(SchedulerInterface):
         )
 
         # Profiling相关设置
-        os.environ['VLLM_ENABLE_SCHEDULER_PROFILING'] = 'false'
+        # os.environ['VLLM_ENABLE_SCHEDULER_PROFILING'] = 'false'
         # os.environ['VLLM_SCHEDULER_PROFILING_LOG'] = 'vllm/scheduler_profiling.jsonl'
-        os.environ['VLLM_SCHEDULER_PROFILING_CONSOLE'] = 'false'
+        # os.environ['VLLM_SCHEDULER_PROFILING_CONSOLE'] = 'false'
 
         self.enable_profiling = os.getenv('VLLM_ENABLE_SCHEDULER_PROFILING', 'false').lower() == 'true'
         self.profiling_log_file = os.getenv('VLLM_SCHEDULER_PROFILING_LOG', 'scheduler_profiling.jsonl')
