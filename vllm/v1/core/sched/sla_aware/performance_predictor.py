@@ -237,7 +237,7 @@ class PerformancePredictor:
                 tokens = self._fallback_solve_tokens(target_latency)
             
             # 确保结果合理
-            tokens = max(1, min(tokens, 4096))  # 限制在合理范围内
+            tokens = max(1, min(tokens, 8192))  # 限制在合理范围内
             
             if self.config.verbose_logging:
                 logger.debug(f"Solved tokens: B={batch_size}, T_target={target_latency:.2f}ms -> {tokens} tokens")
@@ -267,7 +267,7 @@ class PerformancePredictor:
     def _binary_search_tokens(self, batch_size: int, target_latency: float, 
                              max_iterations: int = 20) -> int:
         """二分搜索求解token数量"""
-        low, high = 1, 4096
+        low, high = 1, 8192
         best_tokens = 1
         
         for _ in range(max_iterations):
