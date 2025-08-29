@@ -7,6 +7,7 @@ import time
 from collections import defaultdict, deque
 from collections.abc import Iterable
 from typing import Any, Optional, Union
+from itertools import chain
 
 # 添加profiling相关的导入
 import json
@@ -1432,7 +1433,7 @@ class Scheduler(SchedulerInterface):
             # 计算未完成prefill的token总数
             pending_tokens_total = 0
             try:
-                for req in self.waiting + self.running:
+                for req in chain(self.waiting, self.running):
                     pending_tokens_total += max(0, req.num_tokens - req.num_computed_tokens)
             except Exception:
                 pending_tokens_total = 0
