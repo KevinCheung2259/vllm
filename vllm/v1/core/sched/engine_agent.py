@@ -83,7 +83,8 @@ class EngineAgent:
                        f"interval={self.push_interval}ms, engine_id={self.engine_id}")
         
         # 状态缓存
-        self._state_history: List[int] = []  # scheduled_tokens历史
+        self._state_token_history: List[int] = []  # scheduled_tokens历史
+        self._state_latency_history: List[float] = []  # latency历史
         self._last_push_time = 0
         
         # UDP Socket 配置（零阻塞）
@@ -208,23 +209,28 @@ class EngineAgent:
                     chunk_sizes.append(num_tokens)
             total_tokens = sum(chunk_sizes)
             # 更新token历史
-            self._state_history.append(total_tokens)
-            if len(self._state_history) > 10:  # 保持最近10次历史
-                self._state_history.pop(0)
+            self._state_token_history.append(total_tokens)
+            if len(self._state_token_history) > 10:  # 保持最近10次历史
+                self._state_token_history.pop(0)
             
             # 预测延迟：若调度器未提供，使用简单启发式
             if latency_pred_ms is None:
                 logger.warning("ELRAR: No latency prediction provided, using simple heuristic")
-                base_latency = 10.0
+                base_latency = 8.7
                 token_factor = 0.02
-                batch_penalty = active_batches * 5.0
+                batch_penalty = active_batches * 0.5
                 latency_pred_ms = base_latency + total_tokens * token_factor + batch_penalty
+            # 更新latency历史
+            self._state_latency_history.append(latency_pred_ms)
+            if len(self._state_latency_history) > 10:  # 保持最近10次历史
+                self._state_latency_history.pop(0)
+            
             
             # 工作模式：优先使用调度器判定；否则用本地启发式
             if scheduling_mode is not None:
                 scheduling_mode = scheduling_mode
             else:
-                scheduling_mode = self._determine_scheduling_mode(self._state_history)
+                scheduling_mode = self._determine_scheduling_mode(self._state_token_history)
             
             # KV容量：若未提供则用占位（-1）
             kv_free = int(kv_cache_free_blocks) if kv_cache_free_blocks is not None else -1
@@ -238,7 +244,7 @@ class EngineAgent:
             state = EngineState(
                 engine_id=self.engine_id,
                 timestamp_ms=current_time,
-                latency_pred_ms=float(latency_pred_ms),
+                latency_pred_ms=float(statistics.mean(self._state_latency_history)),
                 scheduling_mode=scheduling_mode,
                 pending_tokens_total=pending_tokens,
                 kv_cache_free_blocks=kv_free,
