@@ -1429,10 +1429,10 @@ class Scheduler(SchedulerInterface):
     ) -> None:
         """同步采集并推送引擎状态（最小侵入，轻量计算）。"""
         try:
-            # 计算等待队列token总数
+            # 计算未完成prefill的token总数
             pending_tokens_total = 0
             try:
-                for req in self.waiting:
+                for req in self.waiting + self.running:
                     pending_tokens_total += max(0, req.num_tokens - req.num_computed_tokens)
             except Exception:
                 pending_tokens_total = 0
