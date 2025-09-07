@@ -142,31 +142,31 @@ class SLAScheduler:
                     }
             
             # 后备方案1：基于目标延迟反向计算
-            total_requests = len(running_requests) + min(len(waiting_requests), max_batch_size)
-            if total_requests > 0:
-                token_budget = self.predictor.solve_for_token_budget(total_requests, target_latency)
-                token_budget = min(token_budget, max_tokens)
-                token_budget = max(1, token_budget)
+            # total_requests = len(running_requests) + min(len(waiting_requests), max_batch_size)
+            # if total_requests > 0:
+            #     token_budget = self.predictor.solve_for_token_budget(total_requests, target_latency)
+            #     token_budget = min(token_budget, max_tokens)
+            #     token_budget = max(1, token_budget)
                 
-                if self.config.verbose_logging:
-                    logger.debug(f"SLA fallback computation: "
-                               f"target={target_latency:.1f}ms, "
-                               f"budget={token_budget}, "
-                               f"batch={total_requests}")
+            #     if self.config.verbose_logging:
+            #         logger.debug(f"SLA fallback computation: "
+            #                    f"target={target_latency:.1f}ms, "
+            #                    f"budget={token_budget}, "
+            #                    f"batch={total_requests}")
                 
-                # 创建简单的分配（平均分配token）
-                allocation = {}
-                for req in running_requests:
-                    allocation[req.request_id] = max(1, token_budget // total_requests)
-                for req in waiting_requests[:max_batch_size]:
-                    allocation[req.request_id] = max(1, token_budget // total_requests)
+            #     # 创建简单的分配（平均分配token）
+            #     allocation = {}
+            #     for req in running_requests:
+            #         allocation[req.request_id] = max(1, token_budget // total_requests)
+            #     for req in waiting_requests[:max_batch_size]:
+            #         allocation[req.request_id] = max(1, token_budget // total_requests)
                 
-                return {
-                    'allocation': allocation,
-                    'token_budget': token_budget,
-                    'target_latency': target_latency,
-                    'prioritize_decode': False
-                }
+            #     return {
+            #         'allocation': allocation,
+            #         'token_budget': token_budget,
+            #         'target_latency': target_latency,
+            #         'prioritize_decode': False
+            #     }
             
             # 后备方案2：使用系统默认值
             return self._fallback_schedule_decision(max_tokens, max_batch_size)

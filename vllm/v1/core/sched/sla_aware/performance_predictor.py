@@ -59,6 +59,10 @@ class PerformancePredictor:
         self.fallback_intercept = config.fallback_intercept_ms  # 截距
         self.fallback_slope = config.fallback_slope_ms_per_token  # 斜率
         
+        # MAPE检查时间控制
+        self.last_mape_check_time = 0
+        self.mape_check_interval = 30.0  # 30秒检查一次MAPE
+        
         # 统计信息
         self.stats = {
             'total_predictions': 0,
@@ -307,6 +311,14 @@ class PerformancePredictor:
             logger.info("Model not initialized, updating model")
             return True
         
+        # 检查是否到了MAPE检查时间
+        current_time = time.time()
+        if current_time - self.last_mape_check_time < self.mape_check_interval:
+            return False
+        
+        # 更新MAPE检查时间
+        self.last_mape_check_time = current_time
+        
         # 检查预测精度是否下降
         recent_data = list(self.performance_buffer)[-self.config.min_samples_for_update:]
         mape = self._calculate_mape(recent_data)
@@ -315,6 +327,8 @@ class PerformancePredictor:
         
         if should_update and self.config.verbose_logging:
             logger.info(f"Model update triggered: MAPE={mape:.3f} > threshold={self.config.model_update_threshold}")
+        elif self.config.verbose_logging:
+            logger.debug(f"MAPE check: MAPE={mape:.3f}, threshold={self.config.model_update_threshold}, update={should_update}")
         
         return should_update
     
