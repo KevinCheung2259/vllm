@@ -12,16 +12,33 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # -------- Paper-ish style settings --------
-plt.rcParams.update({
-    "font.family": "serif",
-    "font.size": 11,
-    "axes.labelsize": 11,
-    "axes.titlesize": 11,
-    "legend.fontsize": 9,
-    "xtick.labelsize": 10,
-    "ytick.labelsize": 10,
-    "lines.linewidth": 1.2
-})
+def apply_topconf_style():
+    plt.rcParams.update({
+        'font.size': 16,
+        'font.family': 'sans-serif',
+        'font.sans-serif': ['DejaVu Sans', 'Liberation Sans', 'Arial'],
+        'axes.linewidth': 1.2,
+        'axes.titlesize': 16,
+        'axes.labelsize': 18,
+        'axes.spines.top': True,
+        'axes.spines.right': True,
+        'xtick.major.size': 4,
+        'ytick.major.size': 4,
+        'xtick.direction': 'out',
+        'ytick.direction': 'out',
+        'legend.frameon': False,
+        'figure.dpi': 160,
+        'savefig.dpi': 300,
+        'savefig.bbox': 'tight',
+        'savefig.pad_inches': 0.04,
+        # 轻网格、路径优化
+        'grid.alpha': 0.25,
+        'path.simplify': True,
+        'path.simplify_threshold': 0.5,
+        'agg.path.chunksize': 10000,
+    })
+
+apply_topconf_style()
 
 # -------- Time axis --------
 t = np.linspace(0, 20, 200)
@@ -70,54 +87,58 @@ def rescale_to_range(x, lo, hi):
 latency  = rescale_to_range(latency_raw,  20.0,   70.0)
 workload = rescale_to_range(workload_raw, 200.0, 2000.0)
 
-# -------- Plot: two stacked subplots --------
-fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 4.5), sharex=True)
+# -------- Plot: single plot with dual Y-axis --------
+fig, ax1 = plt.subplots(figsize=(10, 4), constrained_layout=True)
 
-# Router's View (Aggregated Latency): dashed black, no markers
-ax1.plot(t, latency, linestyle="--", color="red", label="5-sec Avg. Latency")
-ax1.set_ylabel("Latency (ms)")
-ax1.set_title("Router's View")
-ax1.legend(loc="upper right", frameon=False)
-# 固定轴范围以匹配目标区间（可选，保证视觉一致）
-ax1.set_ylim(20, 70)
+# 左轴：Engine's View (Instantaneous Workload)
+ax1.set_xlabel("Time (s)")
+ax1.set_ylabel("Workload (tokens)", color="blue")
+ax1.plot(t, workload, linestyle="-", color="blue", linewidth=2.0, label="Instantaneous Workload (Engine's View)")
+ax1.set_ylim(200, 2000)
+ax1.tick_params(axis='y', labelcolor='blue')
+
+# 右轴：Router's View (Aggregated Latency)
+ax2 = ax1.twinx()
+ax2.set_ylabel("Latency (ms)", color="red")
+ax2.plot(t, latency, linestyle="--", color="red", linewidth=2.0, label="5-sec Avg. Latency (Router's View)")
+ax2.set_ylim(20, 70)
+ax2.tick_params(axis='y', labelcolor='red')
+
+# 由于全局关闭了右侧脊线，这里对 twinx 的右脊线单独开启，保持可读
+if 'right' in ax2.spines:
+    ax2.spines['right'].set_visible(True)
 
 # 添加两条纵向虚线
 ax1.axvline(x=7.5, color='black', linestyle=':', alpha=0.7, linewidth=1.0)
 ax1.axvline(x=11.0, color='black', linestyle=':', alpha=0.7, linewidth=1.0)
 
 # 添加决策延迟标注（水平箭头线）
-ax1.annotate("Decision Lag (≈3.5s)",
-             xy=(11.0, np.percentile(latency, 80)), xycoords='data',
-             xytext=(4.5, np.percentile(latency, 80)), textcoords='data',
+ax2.annotate("Decision Lag (≈3.5s)",
+             xy=(11.0, np.percentile(latency, 77)), xycoords='data',
+             xytext=(5.1, np.percentile(latency, 77)), textcoords='data',
              arrowprops=dict(arrowstyle="<->", color="black", linewidth=1.2),
-             fontsize=9, ha='center', va='center')
+             fontsize=12, ha='center', va='center')
 
-# Engine's View (Instantaneous Workload): solid black, no markers
-ax2.plot(t, workload, linestyle="-", color="blue", label="Instantaneous Workload (tokens)")
-ax2.set_ylabel("Workload (tokens)")
-ax2.set_xlabel("Time (s)")
-ax2.set_title("Engine's View")
-ax2.legend(loc="upper right", frameon=False)
-ax2.set_ylim(200, 2000)
-
-# -------- Optional: Decision lag annotation（不遮挡曲线） --------
-# 移除原来的决策延迟标注，因为已经在上面添加了
-# ax1.annotate("Decision Lag (≈3s)",
-#              xy=(10.8, np.percentile(latency, 60)), xycoords='data',
-#              xytext=(7.8, np.percentile(latency, 85)), textcoords='data',
-#              arrowprops=dict(arrowstyle="<->", color="black"),
-#              fontsize=9)
-
-ax2.annotate("Workload Surge (≈7.4s)",
+# 工作负载激增标注
+ax1.annotate("Workload Surge (≈7.5s)",
              xy=(7.5, 1900), xycoords='data',
-             xytext=(0, 1400), textcoords='data',
+             xytext=(1, 1700), textcoords='data',
              arrowprops=dict(arrowstyle="->", color="black"),
-             fontsize=9)
+             fontsize=12)
 
-plt.tight_layout(rect=[0, 0, 1, 0.97])
+# 添加轻量网格
+ax1.grid(True, axis='both', linestyle='-', linewidth=0.4, alpha=0.25)
+
+# 创建组合图例
+from matplotlib.lines import Line2D
+custom_lines = [
+    Line2D([0], [0], color="blue", linestyle="-", linewidth=2.0, label="Instantaneous Workload"),
+    Line2D([0], [0], color="red", linestyle="--", linewidth=2.0, label="5-sec Avg. Latency")
+]
+ax1.legend(handles=custom_lines, loc='upper right', fontsize=13, frameon=False)
 
 # -------- Save --------
-out_path = "vllm/figs/latency_vs_workload.pdf"
+out_path = "./latency_vs_workload.pdf"
 plt.savefig(out_path, dpi=300, bbox_inches="tight")
 plt.close()
 print(f"Saved: {out_path}")

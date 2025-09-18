@@ -13,6 +13,7 @@ import pandas as pd
 import argparse
 import matplotlib.pyplot as plt
 from pathlib import Path
+from typing import Optional
 
 # 添加modeling目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'modeling'))
@@ -21,7 +22,7 @@ try:
     from performance_model import StableClusterModel
 except ImportError:
     # 如果导入失败，尝试从绝对路径导入
-    sys.path.insert(0, './../../modeling')
+    sys.path.insert(0, '/home/paperspace/zhangy/vllm-workspace/vllm/modeling')
     try:
         from performance_model import StableClusterModel
     except ImportError:
@@ -36,6 +37,21 @@ class PredictedVsActualGenerator:
         self.models = []  # 存储多个模型
         self.dfs = []     # 存储多个数据集
         self.labels = []  # 存储每个数据集的标签
+        self.setup_style()
+
+    def setup_style(self):
+        """设置matplotlib样式，优化PDF渲染性能并与其他图风格一致"""
+        plt.rcParams.update({
+            'figure.dpi': 300,
+            'savefig.dpi': 300,
+            'savefig.bbox': 'tight',
+            'savefig.pad_inches': 0.1,
+            # 降低矢量路径复杂度，提升PDF渲染速度
+            'path.simplify': True,
+            'path.simplify_threshold': 0.5,
+            'agg.path.chunksize': 10000,
+            'pdf.compression': 9,
+        })
     
     def read_profiling_data(self, log_file_or_dir: str) -> pd.DataFrame:
 
@@ -130,7 +146,12 @@ class PredictedVsActualGenerator:
         return model
     
     def generate_multi_dataset_plot(self, models, dfs, labels=None,
-                                   save_path: str = None,ranges:list[list] = None) -> plt.Figure:
+                                   save_path: str = None, ranges:list[list] = None,
+                                   rasterized: bool = False,
+                                   max_points_per_dataset: Optional[int] = None,
+                                   point_size: int = 50,
+                                   alpha: float = 0.6,
+                                   remove_edgecolors: bool = False) -> plt.Figure:
         """
         生成包含多个数据集的"Predicted vs Actual (Stable Model)"图表
         
@@ -145,7 +166,7 @@ class PredictedVsActualGenerator:
             matplotlib Figure对象
         """
         # 创建图表
-        fig, ax = plt.subplots(figsize=(7, 6))
+        fig, ax = plt.subplots(figsize=(7, 6), dpi=300)
         
         # 用于确定坐标轴范围
         all_T = []
@@ -181,6 +202,17 @@ class PredictedVsActualGenerator:
             T_2 = T_1[mask_2]
             T_pred_2 = T_pred_1[mask_2]
             
+            # 下采样：按数据集限制最大点数
+            if max_points_per_dataset is not None and len(T_2) > max_points_per_dataset:
+                rng = np.random.default_rng(42)
+                idx = rng.choice(len(T_2), size=max_points_per_dataset, replace=False)
+                T_2 = T_2[idx]
+                T_pred_2 = T_pred_2[idx]
+
+            # 如果该数据集在过滤/下采样后为空，则跳过
+            if len(T_2) == 0:
+                continue
+
             # 存储过滤后的值以确定范围
             all_T.extend(T_2)
             all_T_pred.extend(T_pred_2)
@@ -195,24 +227,37 @@ class PredictedVsActualGenerator:
             color = default_colors[i % len(default_colors)]
             marker = default_markers[i % len(default_markers)]
             
-            # 绘制散点图
-            ax.scatter(T_pred_2, T_2, alpha=0.6, s=50, c=[color], marker=marker, label=label)
+            # 绘制散点图（可选：栅格化、去边框）
+            edgecolor_value = 'none' if remove_edgecolors else 'white'
+            linewidth_value = 0.0 if remove_edgecolors else 0.5
+            ax.scatter(
+                T_pred_2,
+                T_2,
+                alpha=alpha,
+                s=point_size,
+                c=[color],
+                marker=marker,
+                label=label,
+                edgecolors=edgecolor_value,
+                linewidth=linewidth_value,
+                rasterized=rasterized,
+            )
         
         # 理想线 (y=x)
         min_val = min(min(all_T), min(all_T_pred))
         max_val = max(max(all_T), max(all_T_pred))
-        ax.plot([min_val, max_val], [min_val, max_val], 'r--', lw=2, label='Ideal (y=x)')
+        ax.plot([min_val, max_val], [min_val, max_val], 'r--', lw=4, label='Ideal (y=x)')
         
         # 设置图表属性
-        ax.set_xlabel('Predicted Latency (ms)', fontsize=16,labelpad=10)
-        ax.set_ylabel('Actual Latency (ms)', fontsize=16,labelpad=10)
+        ax.set_xlabel('Predicted Latency (ms)', fontsize=23,labelpad=10)
+        ax.set_ylabel('Actual Latency (ms)', fontsize=23,labelpad=10)
         # ax.set_title('Predicted vs Actual latency', fontsize=18,pad=20)
         ax.grid(True, linestyle='--', alpha=0.3, linewidth=2)
         
         # 添加图例
-        ax.legend(loc='upper left',fontsize = 12,markerscale=1.1 )
+        ax.legend(loc='upper left',fontsize = 18,markerscale=1.8)
         # 设置坐标轴刻度字体大小
-        ax.tick_params(axis='both', pad=8, labelsize=12)  
+        ax.tick_params(axis='both', pad=8, labelsize=19)  
         # 控制绘图区域与图片上下左右的间距
         plt.subplots_adjust(left=0.15, right=0.8, bottom=0.15, top=0.8)
 
@@ -233,7 +278,12 @@ class PredictedVsActualGenerator:
         return fig
     
     def run_multi_dataset_end_to_end(self, log_paths: list, save_path: str = None, 
-                                     labels: list = None,ranges:list[list] = None) -> bool:
+                                     labels: list = None, ranges:list[list] = None,
+                                     rasterized: bool = False,
+                                     max_points_per_dataset: Optional[int] = None,
+                                     point_size: int = 50,
+                                     alpha: float = 0.6,
+                                     remove_edgecolors: bool = False) -> bool:
         """
         运行端到端的流程处理多个数据集：读取数据、训练模型、生成合并图表
         
@@ -283,7 +333,18 @@ class PredictedVsActualGenerator:
             # 3.生成多数据集图表
             if self.verbose:
                 print("\n📊 正在生成包含多个数据集的'Predicted vs Actual'图表...")
-            self.generate_multi_dataset_plot(models, dfs, labels, save_path=save_path,ranges=ranges)
+            self.generate_multi_dataset_plot(
+                models,
+                dfs,
+                labels,
+                save_path=save_path,
+                ranges=ranges,
+                rasterized=rasterized,
+                max_points_per_dataset=max_points_per_dataset,
+                point_size=point_size,
+                alpha=alpha,
+                remove_edgecolors=remove_edgecolors,
+            )
             
             return True
         except Exception as e:
@@ -298,18 +359,23 @@ def main():
     parser = argparse.ArgumentParser(description='生成Predicted vs Actual (Stable Model)图表')
     parser.add_argument('log_path', type=str, nargs='*',
                       help='profiling数据文件或目录路径 (可指定多个，默认: profiling_result)')
-    parser.add_argument('--save-path', type=str, default="./predicted_and_actual_latency.png")
+    parser.add_argument('--save-path', type=str, default="./predicted_and_actual_latency.pdf")
     parser.add_argument('--labels', type=str, nargs='*',help='为每个数据集指定标签 (与log_path顺序对应)')
+    parser.add_argument('--rasterized', action='store_true', help='将散点以栅格方式嵌入PDF，显著降低PDF渲染开销')
+    parser.add_argument('--max-points-per-dataset', type=int, default=None, help='每个数据集最多绘制的点数，超出将随机下采样')
+    parser.add_argument('--point-size', type=int, default=50, help='散点大小')
+    parser.add_argument('--alpha', type=float, default=0.6, help='散点透明度')
+    parser.add_argument('--no-edges', action='store_true', help='移除散点边框以减少矢量路径复杂度')
     
     args = parser.parse_args()
     
     generator = PredictedVsActualGenerator()
-    base_dir = "./../../exp"
+    base_dir = "/home/paperspace/zhangy/vllm-workspace/vllm/exp"
     default_data = {
         "H100":{"log_path":f"{base_dir}/profiling_result_h100","T_range":[0,200]},
         "A100":{"log_path":f"{base_dir}/profiling_result_a100","T_range":[100,200]},
-        "A6000 TP2":{"log_path":f"{base_dir}/profiling_result_a6000","T_range":[100,200]},
-        "A100-32B":{"log_path":f"{base_dir}/profiling_result_h100_qwen32b","T_range":[25,200]},
+        "A6000-TP2":{"log_path":f"{base_dir}/profiling_result_a6000","T_range":[100,200]},
+        "H100-32B":{"log_path":f"{base_dir}/profiling_result_h100_qwen32b","T_range":[25,200]},
     }
 
     labels = list(default_data.keys())  # 获取所有标签
@@ -322,6 +388,11 @@ def main():
         save_path=args.save_path,
         labels=args.labels if args.labels else labels,
         ranges = ranges,
+        rasterized=args.rasterized,
+        max_points_per_dataset=args.max_points_per_dataset,
+        point_size=args.point_size,
+        alpha=args.alpha,
+        remove_edgecolors=args.no_edges,
     )
     
     sys.exit(0 if success else 1)

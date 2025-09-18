@@ -97,59 +97,66 @@ def load_and_process_data(log_file_or_dir='scheduler_profiling.jsonl'):
     return df
 
 def create_time_trend_plot(df, output_file='./time_trend_comparison.png'):
-
-    """创建时间趋势比较图，支持添加模拟数据"""
-    # 检查是否有model run时间数据
+    """创建时间趋势比较图，适合学术论文"""
+    
+    # 学术论文配色方案
+    COLORS = ['#2E3440', '#5E81AC', '#A3BE8C', '#EBCB8B']
+    LINE_STYLES = ['-', '--', '-.', ':']
+    
+    # 检查数据
     has_model_run_data = 'model_run_duration_ms' in df.columns
     
-    # 创建图表
-    fig, ax = plt.subplots(figsize=(7, 6))
+    # 创建适合论文的图表尺寸
+    fig, ax = plt.subplots(figsize=(3.5, 3), dpi=300)
     
-    # 绘制时间趋势
+    # 绘制数据
     if has_model_run_data:
-        ax.plot(df['batch_id'], df['schedule_duration_ms'], label='Engine schedule Time', alpha=0.7)
-        ax.plot(df['batch_id'], df['model_run_duration_ms'], label='Model Run Time', alpha=0.7)
-        # 计算总时间并绘制（如果需要）
-        # total_time = df['schedule_duration_ms'] + df['model_run_duration_ms']
-        # ax.plot(df['batch_id'], total_time, label='Total Time', alpha=0.7)
-        ## 标题
-        # ax.set_title('Time Trend Comparison')
-    else:
-        ax.plot(df['batch_id'], df['schedule_duration_ms'], label='Engine schedule Time')
-        ax.set_title('Schedule Time Trend')
+        ax.plot(df['batch_id'], df['schedule_duration_ms'], 
+               label='Schedule Time', color=COLORS[0], 
+               linestyle=LINE_STYLES[0], linewidth=1.5, alpha=0.9)
+        ax.plot(df['batch_id'], df['model_run_duration_ms'], 
+               label='Model Execution Time', color=COLORS[1], 
+               linestyle=LINE_STYLES[1], linewidth=1.5, alpha=0.9)
     
-    # 添加图例（如果有多个数据系列）
-    if has_model_run_data or (sim_mean is not None and sim_variance is not None):
-        ax.legend(fontsize = 12,markerscale=1.1)
+    # 设置坐标轴标签
+    ax.set_xlabel('Batch ID', fontsize=12, labelpad=2)
+    ax.set_ylabel('Latency (ms)', fontsize=12, labelpad=2)
     
-    # 设置坐标轴标签和网格
-    ax.set_xlabel('Batch ID',fontsize=16,labelpad=10)
-    ax.set_ylabel('Time (ms)',fontsize=16,labelpad=10)
-    # 设置坐标轴刻度字体大小
-    ax.tick_params(axis='both', pad=8, labelsize=12)  
-    ax.grid(True, linestyle='--', alpha=0.3)
-    plt.subplots_adjust(left=0.15, right=0.8, bottom=0.15, top=0.8)
-    # 美化图表
-    plt.tight_layout()
-    pdf_path = "./sechdule_overhead.pdf"
-    # 保存图表
-    plt.savefig(output_file, dpi=300, bbox_inches='tight')
-    plt.savefig(pdf_path, dpi=300, bbox_inches='tight', format='pdf')
-    print(f"\n📊 时间趋势图已保存为: {output_file}")
+    # 设置刻度
+    ax.tick_params(axis='both', which='major', labelsize=9, pad=2)
     
-    # 显示图表（如果在交互环境中运行）
-    # plt.show()
+    # 优化网格线
+    ax.grid(True, which='major', linestyle=':', alpha=0.4, 
+            color='#D8DEE9', linewidth=0.5)
+    
+    # 图例设置
+    if has_model_run_data:
+        ax.legend(loc='upper left', frameon=True, fancybox=False, 
+                 framealpha=0.9, edgecolor='black', fontsize=9,
+                 borderpad=0.3, labelspacing=0.3)
+    
+    # 紧凑布局
+    plt.subplots_adjust(left=0.12, right=0.95, bottom=0.15, top=0.9)
+    
+    # 保存高质量版本
+    plt.savefig(output_file, dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    pdf_path = "paper_figs/scheduling_overhead_fig/scheduling_overhead.pdf"
+    plt.savefig(pdf_path, dpi=300, bbox_inches='tight', 
+                format='pdf', facecolor='white')
+    
+    print(f"📊 学术风格图表已保存: {output_file}")
 
 def main():
     
     print("🚀 vLLM Scheduler 时间趋势图生成工具")
     print("=" * 40)
 
-    log_dir = "./../../exp"
+    log_dir = "exp"
     parser = argparse.ArgumentParser(description='生成 Schedule Overhead 图表')
-    parser.add_argument('log_path', type=str, nargs='*',default=f"{log_dir}/profiling_result_a100",
+    parser.add_argument('log_path', type=str, nargs='*',default=f"{log_dir}/profiling_result_h100_qwen32b",
                       help='profiling数据文件或目录路径 (可指定多个，默认: profiling_result)')
-    parser.add_argument('--save-path', type=str, default="./sechdule_overhead.png")
+    parser.add_argument('--save-path', type=str, default="paper_figs/scheduling_overhead_fig/sechdule_overhead.png")
     
     args = parser.parse_args()
     

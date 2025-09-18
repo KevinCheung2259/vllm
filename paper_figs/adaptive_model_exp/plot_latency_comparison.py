@@ -14,8 +14,8 @@ plt.rcParams.update({
     'axes.linewidth': 1.2,
     'axes.titlesize': 13,
     'axes.labelsize': 12,
-    'axes.spines.top': False,
-    'axes.spines.right': False,
+    'axes.spines.top': True,
+    'axes.spines.right': True,
     'xtick.major.size': 4,
     'ytick.major.size': 4,
     'xtick.direction': 'out',
@@ -29,11 +29,11 @@ plt.rcParams.update({
 
 # ---------- Config ----------
 DATA_FILES = [
-    ('/home/paperspace/zhangy/llm-inference-bench-char/adaptive-model-exp-new/detailed_results_20250907_083620.csv', 'Native'),
-    ('/home/paperspace/zhangy/llm-inference-bench-char/adaptive-model-exp-new/detailed_results_20250907_084451.csv', 'Pretrain'),
-    ('/home/paperspace/zhangy/llm-inference-bench-char/adaptive-model-exp-new/detailed_results_20250907_113336.csv', 'Adaptive'),
+    ('/home/paperspace/zhangy/vllm-workspace/vllm/paper_figs/adaptive_model_exp/detailed_results_20250907_083620.csv', 'Sarathi'),
+    ('/home/paperspace/zhangy/vllm-workspace/vllm/paper_figs/adaptive_model_exp/detailed_results_20250907_084451.csv', 'Offline'),
+    ('/home/paperspace/zhangy/vllm-workspace/vllm/paper_figs/adaptive_model_exp/detailed_results_20250907_113336.csv', 'Online'),
 ]
-OUT_DIR = Path('/home/paperspace/zhangy/llm-inference-bench-char/adaptive-model-exp-new')
+OUT_DIR = Path('/home/paperspace/zhangy/vllm-workspace/vllm/paper_figs/adaptive_model_exp')
 
 # 显示区间：0–90s，不再剔除冷启动
 TIME_MIN, TIME_MAX = 0, 90
@@ -41,10 +41,10 @@ BIN = 5
 ROLL_WIN = 2
 MARK_EVERY = 2
 
-# 颜色/样式（论文图：三色清晰、Adaptive 更醒目）
-COLORS = {'Native': 'blue', 'Pretrain': 'green', 'Adaptive': 'orange'}
-LINESTYLES = {'Native': '-', 'Pretrain': '--', 'Adaptive': '-'}
-MARKERS = {'Native': 'o', 'Pretrain': 's', 'Adaptive': '^'}
+# 颜色/样式（论文图：三色清晰、在线模型更醒目）
+COLORS = {'Sarathi': 'blue', 'Offline': 'green', 'Online': 'orange'}
+LINESTYLES = {'Sarathi': '-', 'Offline': '--', 'Online': '-'}
+MARKERS = {'Sarathi': 'o', 'Offline': 's', 'Online': '^'}
 
 def _read_one(fp, name):
     df = pd.read_csv(fp)
@@ -112,8 +112,8 @@ def plot_latency(aggs, split=25):
     ymin, ymax = _robust_ylim(aggs)
 
     # 背景阶段：0–split 学习期，split–TIME_MAX 稳定期
-    ax.axvspan(0, split,  facecolor="#f2dede", alpha=0.35, zorder=0)
-    ax.axvspan(split, TIME_MAX, facecolor="#dff0d8", alpha=0.35, zorder=0)
+    ax.axvspan(-2, split,  facecolor="#f2dede", alpha=0.35, zorder=0)
+    ax.axvspan(split, TIME_MAX+2, facecolor="#dff0d8", alpha=0.35, zorder=0)
     ax.axvline(x=split, color='k', linestyle=':', linewidth=1.0, alpha=0.8)
 
     # === 阶段文字说明（顶部居中，不随 y 轴缩放而移动）===
