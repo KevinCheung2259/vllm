@@ -96,7 +96,7 @@ def load_and_process_data(log_file_or_dir='scheduler_profiling.jsonl'):
     
     return df
 
-def create_time_trend_plot(df, output_file='./time_trend_comparison.png'):
+def create_time_trend_plot(df, current_dir):
     """创建时间趋势比较图，适合学术论文"""
     
     # 学术论文配色方案
@@ -139,29 +139,31 @@ def create_time_trend_plot(df, output_file='./time_trend_comparison.png'):
     plt.subplots_adjust(left=0.12, right=0.95, bottom=0.15, top=0.9)
     
     # 保存高质量版本
-    plt.savefig(output_file, dpi=300, bbox_inches='tight', 
+    plt.savefig(f"{current_dir}/scheduling_overhead.png", dpi=300, bbox_inches='tight', 
                 facecolor='white', edgecolor='none')
-    pdf_path = "paper_figs/scheduling_overhead_fig/scheduling_overhead.pdf"
-    plt.savefig(pdf_path, dpi=300, bbox_inches='tight', 
+    plt.savefig(f"{current_dir}/scheduling_overhead.pdf", dpi=300, bbox_inches='tight', 
                 format='pdf', facecolor='white')
     
-    print(f"📊 学术风格图表已保存: {output_file}")
+    print(f"📊 学术风格图表已保存: {current_dir} 目录下")
 
 def main():
     
     print("🚀 vLLM Scheduler 时间趋势图生成工具")
     print("=" * 40)
 
-    log_dir = "exp"
+    current_file_path = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file_path)
+
+    p_p_dir = os.path.dirname( os.path.dirname(current_dir))
+
+    log_dir = f"{p_p_dir}/exp"
     parser = argparse.ArgumentParser(description='生成 Schedule Overhead 图表')
     parser.add_argument('log_path', type=str, nargs='*',default=f"{log_dir}/profiling_result_h100_qwen32b",
                       help='profiling数据文件或目录路径 (可指定多个，默认: profiling_result)')
-    parser.add_argument('--save-path', type=str, default="paper_figs/scheduling_overhead_fig/sechdule_overhead.png")
     
     args = parser.parse_args()
     
     log_path = args.log_path
-    output_file = args.save_path
     
     # 加载和处理数据
     df = load_and_process_data(log_path)
@@ -169,7 +171,7 @@ def main():
         return
     
     # 创建并保存时间趋势图，传入模拟数据参数和密度因子
-    create_time_trend_plot(df, output_file)
+    create_time_trend_plot(df,current_dir )
     
     print("\n✅ 处理完成!")
 

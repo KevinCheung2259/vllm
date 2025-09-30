@@ -356,10 +356,14 @@ class PredictedVsActualGenerator:
 
 def main():
 
+    # 获取当前文件的完整路径
+    current_file_path = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file_path)
+
     parser = argparse.ArgumentParser(description='生成Predicted vs Actual (Stable Model)图表')
     parser.add_argument('log_path', type=str, nargs='*',
                       help='profiling数据文件或目录路径 (可指定多个，默认: profiling_result)')
-    parser.add_argument('--save-path', type=str, default="./predicted_and_actual_latency.pdf")
+    parser.add_argument('--save-path', type=str, default=f"{current_dir}/predicted_and_actual_latency.pdf")
     parser.add_argument('--labels', type=str, nargs='*',help='为每个数据集指定标签 (与log_path顺序对应)')
     parser.add_argument('--rasterized', action='store_true', help='将散点以栅格方式嵌入PDF，显著降低PDF渲染开销')
     parser.add_argument('--max-points-per-dataset', type=int, default=None, help='每个数据集最多绘制的点数，超出将随机下采样')
@@ -370,7 +374,9 @@ def main():
     args = parser.parse_args()
     
     generator = PredictedVsActualGenerator()
-    base_dir = "/home/paperspace/zhangy/vllm-workspace/vllm/exp"
+
+    p_p_dir = os.path.dirname(os.path.dirname(current_dir))
+    base_dir = f"{p_p_dir}/exp"
     default_data = {
         "H100":{"log_path":f"{base_dir}/profiling_result_h100","T_range":[0,200]},
         "A100":{"log_path":f"{base_dir}/profiling_result_a100","T_range":[100,200]},

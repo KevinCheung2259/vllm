@@ -1,0 +1,35 @@
+arxiv qps 16 slo 20
+    sla_elrar:96.77
+    native_elrar:39.88
+    sla_roundrobin:88.52
+    native_roundrobin:34.19
+
+flowgpt qps 17 slo 10
+    sla_elrar:96.29
+    native_elrar:28.84
+    sla_roundrobin:75.88
+    native_roundrobin:14.16
+
+flowgpt_timestamp qps 17 slo 16
+    sla_elrar:80.47
+    native_elrar:64.11
+    sla_roundrobin:69.43
+    native_roundrobin:29.09
+
+coder qps 56 slo 2.79
+    sla_elrar:79.69
+    native_elrar:61.18
+    sla_roundrobin:73.57
+    native_roundrobin:50.90
+
+sharegpt qps 44 slo 7
+    sla_elrar:99.12
+    native_elrar:97.93
+    sla_roundrobin:97.10
+    native_roundrobin:95.56
+
+    new
+    sla_elrar:96.12
+    native_elrar:88.93
+    sla_roundrobin:86.10
+    Baseline ,native_roundrobin:79.56

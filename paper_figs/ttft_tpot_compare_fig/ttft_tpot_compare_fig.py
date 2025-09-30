@@ -144,26 +144,20 @@ def draw_ttft_tpot(chunk_sizes,avg_ttft,avg_tpot):
 
 
 def save(log_dir):
-        # 保存图表操作
-    # 获取 log_dir 后两级目录名
-    path_parts = os.path.normpath(log_dir).split(os.sep)
-    if len(path_parts) >= 2:
-        dir_name = '_'.join(path_parts[-2:])
-    else:
-        dir_name = 'ttft_tpot_plot'
-        
-    # svg_dir = "svg"
-    # if not os.path.exists(svg_dir):
-    #     os.makedirs(svg_dir, exist_ok=True)
-    # plt.savefig(f'{svg_dir}/{dir_name}.svg', format='svg')
 
-    plt.savefig('./ttft_tpot_plot.png', format='png', dpi=300, bbox_inches='tight', pad_inches=0.04)
-    plt.savefig('./ttft_tpot_plot.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0.04)
+    parent_dir = os.path.dirname(log_dir)
+    plt.savefig(f'{parent_dir}/ttft_tpot_plot.png', format='png', dpi=300, bbox_inches='tight', pad_inches=0.04)
+    plt.savefig(f'{parent_dir}/ttft_tpot_plot.pdf', format='pdf', dpi=300, bbox_inches='tight', pad_inches=0.04)
 
 
 if __name__ == "__main__":
+
+    # 获取当前文件的完整路径
+    current_file_path = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file_path)
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--log-dir', type=str, default="./qps_0.5_prompt-1k")
+    parser.add_argument('--log-dir', type=str, default=f"{current_dir}/qps_0.5_prompt-1k")
     args = parser.parse_args()
     apply_topconf_style()
     data_process(args.log_dir)

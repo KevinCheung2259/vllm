@@ -38,8 +38,8 @@ def apply_topconf_style():
 def generate_simulation_data():
     # 使用字典存储数据
     data = {
-        'categories': ['ShareGPT', 'Coder', 'FlowGPT-Q', 'FlowGPT-T'],
-        'group1': {'name': 'SynergySched', 'values': [99.37, 73.65, 67.06, 61.85], 'color': 'red', 'hatch': ''},
+        'categories': ['ShareGPT', 'Coding', 'FlowGPT-Q', 'FlowGPT-T'],
+        'group1': {'name': 'PRISM (Ours)', 'values': [99.37, 73.65, 67.06, 61.85], 'color': 'red', 'hatch': ''},
         'group2': {'name': 'Latency-Based', 'values': [52.59, 31.04, 23.56, 27.12], 'color': '#999900', 'hatch': '/'},
         'group3': {'name': 'Weighted-Based', 'values': [84.28, 70.80, 58.13,36.26], 'color': '#009999', 'hatch': '\\'},
         'group4': {'name': 'Least-Loaded', 'values': [86.63, 66.06, 56.42, 46.08], 'color': '#FF66FF', 'hatch': 'x'}

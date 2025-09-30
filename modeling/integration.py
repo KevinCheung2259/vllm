@@ -80,7 +80,7 @@ def test_model_performance(model):
     """测试模型性能"""
     import time
     
-    test_points = [(3, 256), (16, 2048), (32, 4096)]
+    test_points = [(1, 1), (2, 2), (3, 200)]
     print("\n🔍 模型性能测试:")
     print("-" * 40)
     
@@ -227,8 +227,8 @@ def create_modeling_plots(model, df, suffix=''):
     
     # 创建等高线图
     fig1 = model.plot_contour(
-        batch_range=(1, 64),
-        token_range=(1, 1024),
+        batch_range=(1, 120),
+        token_range=(1, 4096),
         save_path=f'./modeling/modeling_contour{suffix_str}.png'
     )
     

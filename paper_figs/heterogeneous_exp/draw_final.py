@@ -1,72 +1,110 @@
 from PIL import Image
 import os
+import sys
 
-from draw import draw_image
-from picture_process import add_title_to_image,add_side_title_to_image,get_image_paths_from_directory
+from draw import draw
+from draw_single import draw_sigle_image
+from picture_process import add_title_to_image_bottom
+from picture_process import add_title_to_image,add_side_title_to_image,get_image_paths
 from picture_process import combine_images_horizontally,combine_images_vertically,add_legend_to_image
 
-def data2images(base_dir):
-    # 生成原始数据图片
-    data2images_items = {
-        "Coder":{"data_dir":f"{base_dir}/result/Coder","e2e-slo":12},
-        "ShareGPT":{"data_dir":f"{base_dir}/result/ShareGPT","e2e-slo":10},
-        "Flowgpt-qps":{"data_dir":f"{base_dir}/result/Flowgpt-qps","e2e-slo":4.5},
-        "Flowgpt-timestamp":{"data_dir":f"{base_dir}/result/Flowgpt-timestamp","e2e-slo":9},
-    }
-
-    for item in data2images_items:
-        draw_image(data2images_items[item]["data_dir"],data2images_items[item]["e2e-slo"])
-
 def add_top_title(base_dir):
-    add_top_title_items = {"p50":f"{base_dir}/picture/ShareGPT/ShareGPT_p50.png",
-                                "p90":f"{base_dir}/picture/ShareGPT/ShareGPT_p90.png",
-                                "p95":f"{base_dir}/picture/ShareGPT/ShareGPT_p95.png",
-                                "p99":f"{base_dir}/picture/ShareGPT/ShareGPT_p99.png",    
-                                "slo_attainment":f"{base_dir}/picture/ShareGPT/ShareGPT_slo.png"}
+    add_top_title_items = {"P50 E2E (s)":f"{base_dir}/picture/sharegpt/sharegpt_p50.png",
+                            "P90 E2E (s) ":f"{base_dir}/picture/sharegpt/sharegpt_p90.png",
+                            "P50 TTFT (s)":f"{base_dir}/picture/sharegpt/sharegpt_ttft.png",
+                            "P50 TPOT (ms)":f"{base_dir}/picture/sharegpt/sharegpt_tpot.png",    
+                            "SLO Attainment (%)":f"{base_dir}/picture/sharegpt/sharegpt_slo.png"}
+    config = {
+        "fontsize":  100,
+        "title_height":200,
+        "position":0.6
+    }
     
     for item in add_top_title_items:
-        add_title_to_image(image = Image.open(add_top_title_items[item]), title_text = item, 
+        add_title_to_image(image = Image.open(add_top_title_items[item]),config = config, title_text = item, 
                            output = add_top_title_items[item])
 
+def add_bottom_title(base_dir):
+    add_bottom_title_items = {f"{base_dir}/picture/flowgpt_timestamp/flowgpt_timestamp_p50.png",
+                              f"{base_dir}/picture/flowgpt_timestamp/flowgpt_timestamp_p90.png",
+                              f"{base_dir}/picture/flowgpt_timestamp/flowgpt_timestamp_ttft.png",  
+                              f"{base_dir}/picture/flowgpt_timestamp/flowgpt_timestamp_tpot.png",
+                              f"{base_dir}/picture/flowgpt_timestamp/flowgpt_timestamp_slo.png"}
+    config = {
+        "fontsize":  100,
+        "title_height":200,
+        "position":0.6
+    }
+    
+    for item in add_bottom_title_items:
+        add_title_to_image_bottom(image = Image.open(item),config = config, title_text = "Request/s", 
+                           output = item)
+
 def add_side_title(base_dir):
-        # 在第一步处理的图片后添加侧标题
+    # 在第一步处理的图片后添加侧标题
     add_side_title_items = {
-        "ShareGPT":f"{base_dir}/picture/ShareGPT/ShareGPT_p50.png",
-        "Coder":f"{base_dir}/picture/Coder/Coder_p50.png",
-        "Flowgpt-qps":f"{base_dir}/picture/Flowgpt-qps/Flowgpt-qps_p50.png",
-        "Flowgpt-timestamp":f"{base_dir}/picture/Flowgpt-timestamp/Flowgpt-timestamp_p50.png",
+        "ShareGPT":f"{base_dir}/picture/sharegpt/sharegpt_p50.png",
+        "Coding":f"{base_dir}/picture/coder/coder_p50.png",
+        "FlowGPT-Q":f"{base_dir}/picture/flowgpt_qps/flowgpt_qps_p50.png",
+        "FlowGPT-T":f"{base_dir}/picture/flowgpt_timestamp/flowgpt_timestamp_p50.png",
+    }
+
+    config = {
+        "fontsize":  100,
+        "total_title_width":300,
+        "position":0.1 # 与右边距离比例
     }
 
     for item in add_side_title_items:
-        add_side_title_to_image(image = Image.open(add_side_title_items[item]), title_text1 = item,
+        add_side_title_to_image(image = Image.open(add_side_title_items[item]),config = config, title_text1 = item,
                                 title_text2 = "Latency", output=add_side_title_items[item])
 
-def horizontally_merge(base_dir):
-    horizontally_merge_items = {
-        "ShareGPT":f"{base_dir}/picture/ShareGPT",
-        "Coder":f"{base_dir}/picture/Coder",
-        "Flowgpt-qps":f"{base_dir}/picture/Flowgpt-qps",
-        "Flowgpt-timestamp":f"{base_dir}/picture/Flowgpt-timestamp",
-    }
+def combine_horizontally(base_dir):
+    dirs = [f"{base_dir}/picture/sharegpt",
+            f"{base_dir}/picture/coder",
+            f"{base_dir}/picture/flowgpt_qps",
+            f"{base_dir}/picture/flowgpt_timestamp"]
 
-    for item in horizontally_merge_items:
-        image_paths = get_image_paths_from_directory(horizontally_merge_items[item])
-        combine_images_horizontally(input_paths = image_paths,dataset = item)
+    order_list = ['p50','p90','ttft','tpot','slo']
+    for dir in dirs:
+        combine_images_horizontally(dir = dir,order_list = order_list)
 
-def vertically_merge(base_dir):
-    image_paths = get_image_paths_from_directory(f"{base_dir}/picture/merge_horizontally")
-    combine_images_vertically(input_paths = image_paths)
+def combine_vertically(base_dir):
+    dir = f"{base_dir}/picture/combine_horizontally"
+    order_list = ['sharegpt','coder','flowgpt_qps','flowgpt_timestamp']
+    combine_images_vertically(dir = dir,order_list = order_list)
 
 def add_legend(base_dir):
-    add_legend_to_image(Image.open(f"{base_dir}/picture/merge_vertically/merge_vertically.png"))
+
+    image = Image.open(f"{base_dir}/picture/combine_vertically/image_combine_v.png")
+    config = {
+        "fontsize":100,
+        "legend_total_height":200,
+        "legend_labels":["PRISM","Latency-Based","Weighted-Based","Least-Loaded"],
+        "colors":["red","#999900","#009999","#FF66FF"],
+        "output_dir":f"{base_dir}/picture/combine_vertically/heterogeneous_exp_comparison_paper",
+        "legend_metrics":{
+            "line_width":10,          # 图例的线的宽度
+            "dotted_line_width":30,  # 虚线的点的长度
+            "legend_length_ratoi":3, # 一个图例线的长度比例
+            "legend_height":2,       # 图例与顶部的距离比例
+            "marker_size":0.35,         # 图例标记的大小比例    
+            "legend_interval_ratoi":1 # 图例之间的间隔比例
+        }
+    }
+    add_legend_to_image(image,config)
 
 if __name__ == "__main__":
 
-    base_dir = "."
+    # 获取当前文件的完整路径
+    current_file_path = os.path.abspath(__file__)
+    current_dir = os.path.dirname(current_file_path)
 
-    data2images(base_dir)
+    base_dir = current_dir
+    draw_sigle_image(base_dir)
     add_top_title(base_dir)
+    add_bottom_title(base_dir)
     add_side_title(base_dir)
-    horizontally_merge(base_dir)
-    vertically_merge(base_dir)
+    combine_horizontally(base_dir) # 横向合并
+    combine_vertically(base_dir) # 纵向合并
     add_legend(base_dir)
