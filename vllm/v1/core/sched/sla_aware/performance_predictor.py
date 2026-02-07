@@ -61,7 +61,7 @@ class PerformancePredictor:
         
         # MAPE检查时间控制
         self.last_mape_check_time = 0
-        self.mape_check_interval = 30.0  # 30秒检查一次MAPE
+        self.mape_check_interval = config.mape_check_interval  # 从config读取MAPE检查间隔
         
         # 统计信息
         self.stats = {

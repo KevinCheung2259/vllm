@@ -8,7 +8,7 @@ from pathlib import Path
 
 # ---------- Global matplotlib style (paper-like) ----------
 plt.rcParams.update({
-    'font.size': 11,
+    'font.size': 13,
     'font.family': 'sans-serif',
     'font.sans-serif': ['DejaVu Sans', 'Liberation Sans', 'Arial'],
     'axes.linewidth': 1.2,

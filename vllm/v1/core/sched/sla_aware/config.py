@@ -29,6 +29,7 @@ class SLASchedulerConfig:
     min_samples_for_update: int = 50        # 触发模型更新的最少样本数
     max_buffer_size: int = 1000             # 性能数据缓冲区大小
     model_confidence_threshold: float = 0.8 # 模型R²阈值，低于此值使用线性后备
+    mape_check_interval: float = 30.0          # MAPE检查间隔(秒)
     
     # === 预训练模型配置 ===
     use_stable_cluster_model: bool = False  # 是否使用稳定集群模型
@@ -78,6 +79,7 @@ class SLASchedulerConfig:
                 min_samples_for_update=int(os.getenv('VLLM_SLA_MIN_SAMPLES', '64')),
                 max_buffer_size=int(os.getenv('VLLM_SLA_BUFFER_SIZE', '1000')),
                 model_confidence_threshold=float(os.getenv('VLLM_SLA_MODEL_CONFIDENCE', '0.8')),
+                mape_check_interval=float(os.getenv('VLLM_SLA_MAPE_CHECK_INTERVAL', '30.0')),
                 
                 # SLA参数
                 slo_tpot_ms=float(os.getenv('VLLM_SLO_TPOT_MS', '50.0')),
