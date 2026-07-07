@@ -92,71 +92,90 @@ class SLAOptimizer:
             batch_search_limit = len(running_requests) + len(waiting_requests)
             min_batch_size = max(1, len(running_requests))
             
+            # 目标(建议1,对齐 E2E=TTFT+TPOT*output_len):最小化预测 E2E 代理。
+            # 每个候选:decode 阶段代价 = TPOT_est * E_out;并对未接纳的等待请求加排队惩罚。
+            # 低载(无排队)→ 偏小 batch → 低 TPOT;高载(排队多)→ 惩罚推动多接纳 → 保吞吐。
+            import os as _os
+            slo_cap = float(self.config.slo_tpot_ms)
+            E_out = float(_os.getenv("VLLM_SLA_EXPECTED_OUTPUT_LEN", "256"))   # 预估输出长度
+            q_penalty = float(_os.getenv("VLLM_SLA_QUEUE_PENALTY", "1.0"))     # 未接纳请求排队惩罚系数
+            n_waiting = len(waiting_requests)
+            # 自适应 batch 下限——延迟↔吞吐前沿旋钮,随等待队列(积压)增长:
+            #   低载(队列空)→ 下限≈1(小 batch、低 TPOT,匹配基线);
+            #   高载(积压多)→ 下限升到上限 MIN_BATCH(大 batch、保吞吐,拿饱和区优势)。
+            # MIN_BATCH=1 即关闭自适应(退化为原行为)。
+            min_batch_cap = int(_os.getenv("VLLM_SLA_MIN_BATCH", "1"))         # 自适应下限的上限
+            min_batch_k = float(_os.getenv("VLLM_SLA_MIN_BATCH_K", "2.0"))     # 随队列增长的斜率
+            adaptive_floor = max(1, min(min_batch_cap, int(1 + min_batch_k * n_waiting)))
+            min_batch_size = max(min_batch_size, min(adaptive_floor, batch_search_limit))
             best_result = None
-            min_error = float('inf')
-            
+            best_e2e = float('inf')
+            fallback_result = None       # 兜底:取预测步延迟最低者
+            fallback_pred = float('inf')
+            min_error = 0.0              # 仅用于日志兼容
+
             if self.config.verbose_logging:
-                logger.debug(f"Starting optimization: target={target_latency:.1f}ms, "
-                           f"running={len(running_requests)}, waiting={len(waiting_requests)}")
-            
+                logger.debug(f"Starting optimization(E2E): slo_cap={slo_cap:.1f}ms, E_out={E_out}, "
+                           f"running={len(running_requests)}, waiting={n_waiting}")
+
             # Phase 1: 穷举搜索batch size并为每个候选配置执行贪心调度
             for batch_size in range(min_batch_size, batch_search_limit + 1):
-                # 超时检查
                 if (time.perf_counter() - start_time) * 1000 > self.config.optimization_timeout_ms:
                     self.stats['timeout_count'] += 1
-                    if self.config.verbose_logging:
-                        logger.info(f"Optimization timeout at batch_size={batch_size}")
                     break
-                
-                # Phase 2: 求解最优token数
-                optimal_tokens = self.predictor.solve_for_token_budget(batch_size, target_latency)
+
+                # Phase 2: token 预算(prefill 用较大预算以压低 TTFT,受 SLO 与 max_tokens 约束)
+                optimal_tokens = self.predictor.solve_for_token_budget(batch_size, slo_cap)
                 optimal_tokens = min(optimal_tokens, max_tokens)
-                
                 if optimal_tokens <= 0:
                     continue
-                
+
                 # Phase 3: 贪心分配资源
                 allocation = self._greedy_allocation(
-                    running_requests, waiting_requests, 
-                    batch_size, optimal_tokens
+                    running_requests, waiting_requests, batch_size, optimal_tokens
                 )
-                
                 if not allocation:
                     continue
-                
-                # 验证分配结果
-                scheduled_requests = [req_id for req_id, tokens in allocation.items() if tokens > 0]
+
+                scheduled_requests = [rid for rid, t in allocation.items() if t > 0]
                 actual_batch_size = len(scheduled_requests)
                 actual_tokens = sum(allocation.values())
-                
-                # 确保分配结果满足约束
-                if actual_batch_size <= batch_size and actual_tokens <= optimal_tokens:
-                    # 预测实际延迟
-                    predicted_latency = self.predictor.predict_latency(actual_batch_size, actual_tokens)
-                    error = abs(predicted_latency - target_latency)
-                    
-                    # 更新最佳结果
-                    if error < min_error:
-                        min_error = error
-                        decode_count, prefill_count = self._count_request_types(
-                            running_requests, waiting_requests, allocation
-                        )
-                        
-                        best_result = OptimizationResult(
-                            optimal_batch_size=batch_size,
-                            optimal_token_budget=optimal_tokens,
-                            allocation=allocation,
-                            predicted_latency=predicted_latency,
-                            optimization_time_ms=0,  # 稍后设置
-                            target_latency=target_latency,
-                            actual_batch_size=actual_batch_size,
-                            decode_count=decode_count,
-                            prefill_count=prefill_count
-                        )
-                
-                # 如果已经找到了足够好的解，可以提前退出
-                if min_error < target_latency * 0.1:  # 10%的误差范围内
-                    break
+                if actual_batch_size == 0 or actual_tokens <= 0:
+                    continue
+
+                predicted_latency = self.predictor.predict_latency(actual_batch_size, actual_tokens)
+                # decode TPOT 代理:把该 batch 视作纯 decode 步(每序列 1 token)估每步时间
+                tpot_est = self.predictor.predict_latency(actual_batch_size, actual_batch_size)
+                # 本步接纳的等待请求数
+                admitted_wait = sum(1 for req in waiting_requests
+                                    if allocation.get(getattr(req, "request_id", None), 0) > 0)
+                unadmitted = max(0, n_waiting - admitted_wait)
+                # 预测 E2E 代理(ms):解码 TPOT*输出 + 未接纳请求排队惩罚
+                e2e_score = tpot_est * E_out + unadmitted * q_penalty * tpot_est * E_out
+
+                decode_count, prefill_count = self._count_request_types(
+                    running_requests, waiting_requests, allocation
+                )
+                cand = OptimizationResult(
+                    optimal_batch_size=batch_size,
+                    optimal_token_budget=actual_tokens,
+                    allocation=allocation,
+                    predicted_latency=predicted_latency,
+                    optimization_time_ms=0,
+                    target_latency=target_latency,
+                    actual_batch_size=actual_batch_size,
+                    decode_count=decode_count,
+                    prefill_count=prefill_count
+                )
+                if e2e_score < best_e2e:
+                    best_e2e = e2e_score
+                    best_result = cand
+                if predicted_latency < fallback_pred:
+                    fallback_pred = predicted_latency
+                    fallback_result = cand
+
+            if best_result is None:
+                best_result = fallback_result
             
             # 设置优化时间
             optimization_time_ms = (time.perf_counter() - start_time) * 1000

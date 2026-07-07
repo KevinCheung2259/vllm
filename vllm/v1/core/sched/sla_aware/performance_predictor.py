@@ -13,6 +13,7 @@ import time
 import pandas as pd
 import numpy as np
 import logging
+import csv
 
 # 导入本地的吞吐饱和模型
 try:
@@ -54,6 +55,9 @@ class PerformancePredictor:
         self.last_update_time = 0
         self.is_ready = False
         self._update_count = 0
+
+        # parameter log file for stability analysis
+        self._param_log_path = os.getenv("VLLM_SLA_PARAM_LOG_PATH", "")
         
         # 线性后备模型参数
         self.fallback_intercept = config.fallback_intercept_ms  # 截距
@@ -174,10 +178,12 @@ class PerformancePredictor:
         if self.config.verbose_logging:
             logger.debug(f"Added observation: B={batch_size}, S={total_tokens}, T={actual_latency:.2f}ms")
         
-        # 如果使用预拟合模型，不进行在线更新
-        if self.config.use_pretrained_model and self.is_ready:
+        # 如果使用预拟合模型且未启用partial_fit/eval_only，不进行在线更新
+        if (self.config.use_pretrained_model and self.is_ready
+                and not self.config.partial_fit_enabled
+                and not self.config.eval_only):
             return
-        
+
         # 检查是否需要更新模型
         if self._should_update_model():
             self._update_model()
@@ -296,8 +302,10 @@ class PerformancePredictor:
     
     def _should_update_model(self) -> bool:
         """判断是否应该更新模型"""
-        # 如果使用预拟合模型，不进行更新
-        if self.config.use_pretrained_model and self.is_ready:
+        # 如果使用预拟合模型且未启用partial_fit/eval_only，不进行更新
+        if (self.config.use_pretrained_model and self.is_ready
+                and not self.config.partial_fit_enabled
+                and not self.config.eval_only):
             return False
         
         if not MODEL_AVAILABLE:
@@ -370,18 +378,32 @@ class PerformancePredictor:
             # 创建并拟合模型
             if self.model is None:
                 self.model = ThroughputSaturationModel(verbose=self.config.verbose_logging)
-            
-            self.model.fit(df)
-            
+
+            # Eval-only mode: compute R² on current data without updating params
+            if self.config.eval_only and self.model.is_fitted:
+                r2 = self._evaluate_model_r2(df)
+                self._update_count += 1
+                self.stats['last_r2'] = r2
+                self._log_model_params(r2, len(data))
+                if self.config.verbose_logging:
+                    logger.info(f"Eval-only (#{self._update_count}): R²={r2:.3f}, samples={len(data)}")
+                return True
+
+            # Use partial_fit when enabled (fix structural params, only fit linear params)
+            if self.config.partial_fit_enabled and self.model.is_fitted:
+                self.model.partial_fit(df)
+            else:
+                self.model.fit(df)
+
             # 验证模型质量
             r2 = self.model.fit_metrics.get('r2', 0.0) if hasattr(self.model, 'fit_metrics') else 0.0
-            
+
             if r2 > self.config.model_confidence_threshold:
                 self.is_ready = True
                 self.last_update_time = time.time()
                 self._update_count += 1
                 self.stats['last_r2'] = r2
-                
+
                 # 保存模型（如果配置允许）
                 if self.config.save_trained_model and self.config.model_save_path:
                     try:
@@ -390,21 +412,57 @@ class PerformancePredictor:
                             logger.info(f"Model saved to: {self.config.model_save_path}")
                     except Exception as e:
                         logger.warning(f"Failed to save model: {e}")
-                
+
                 if self.config.verbose_logging:
                     logger.info(f"Model updated successfully (#{self._update_count}): R²={r2:.3f}, samples={len(data)}")
-                
+
+                # log params to CSV for stability analysis
+                self._log_model_params(r2, len(data))
+
                 return True
             else:
                 if self.config.verbose_logging:
                     logger.warning(f"Model quality too low: R²={r2:.3f} < threshold={self.config.model_confidence_threshold}")
-                
+
                 return False
                 
         except Exception as e:
             logger.error(f"Model update failed: {e}")
             return False
     
+
+    def _evaluate_model_r2(self, df: pd.DataFrame) -> float:
+        """Evaluate current model's R² on given data without updating params."""
+        from sklearn.metrics import r2_score
+        try:
+            B = df['batch_size'].to_numpy(dtype=float)
+            S = df['total_tokens'].to_numpy(dtype=float)
+            T = df['model_run_duration_ms'].to_numpy(dtype=float)
+            T_pred = self.model.predict(B, S)
+            return float(r2_score(T, T_pred))
+        except Exception as e:
+            logger.warning(f"R² evaluation failed: {e}")
+            return 0.0
+
+    def _log_model_params(self, r2: float, n_samples: int) -> None:
+        """Write model parameters to CSV log file."""
+        if not self._param_log_path:
+            return
+        try:
+            params = self.model.params
+            param_names = self.model.param_names
+            timestamp = time.time()
+
+            file_exists = os.path.exists(self._param_log_path)
+            with open(self._param_log_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(["timestamp", "update_count", "r2", "n_samples"] + param_names)
+                writer.writerow([f"{timestamp:.3f}", self._update_count, f"{r2:.4f}", n_samples]
+                                + [f"{p:.6f}" for p in params])
+        except Exception as e:
+            logger.warning(f"Failed to log params: {e}")
+
     def get_status(self) -> Dict[str, Any]:
         """获取预测器状态"""
         return {

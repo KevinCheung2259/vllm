@@ -21,17 +21,18 @@ logger = logging.getLogger(__name__)
 
 
 class ThroughputSaturationModel:
-    """基于吞吐饱和理论的性能建模类
-    
+    """基于吞吐饱和理论的性能建模类 (6-parameter model)
+
     实现论文中的核心性能模型：
     Thr(B,S) = P_max * (1 - exp(-k_B * B)) * (1 - exp(-k_S * S))
-    Work(B,S) = w_0 + w_1 * S
-    T(B,S) = τ_0 + Work(B,S) / Thr(B,S) + τ_B * B + τ_S * S
+    T(B,S) = w_1 * S / Thr(B,S) + τ_B * B + τ_S * S
+
+    使用两阶段拟合解耦结构参数 (P_max, k_B, k_S) 与线性参数 (w_1, τ_B, τ_S)。
     """
-    
+
     def __init__(self, verbose: bool = True):
         """初始化模型
-        
+
         Args:
             verbose: 是否输出详细信息
         """
@@ -41,18 +42,16 @@ class ThroughputSaturationModel:
         self.params = None
         self.scales = None
         self.fit_metrics = None
-        
-        # 参数名称和含义
+
+        # 参数名称和含义 (6 parameters)
         self.param_names = [
-            'P_max', 'k_B', 'k_S', 'w_0', 'w_1', 'tau_0', 'tau_B', 'tau_S'
+            'P_max', 'k_B', 'k_S', 'w_1', 'tau_B', 'tau_S'
         ]
         self.param_descriptions = {
             'P_max': '最大有效吞吐量 (tokens/ms)',
             'k_B': 'batch并行度敏感系数',
-            'k_S': 'token并行度敏感系数', 
-            'w_0': '基础工作量常数',
+            'k_S': 'token并行度敏感系数',
             'w_1': '每token工作量系数',
-            'tau_0': '基础延迟常数 (ms)',
             'tau_B': '每batch额外延迟 (ms/batch)',
             'tau_S': '每token额外延迟 (ms/token)'
         }
@@ -61,33 +60,16 @@ class ThroughputSaturationModel:
     def throughput(B: np.ndarray, S: np.ndarray, P_max: float, k_B: float, k_S: float) -> np.ndarray:
         """计算有效吞吐量"""
         return P_max * (1.0 - np.exp(-k_B * B)) * (1.0 - np.exp(-k_S * S))
-    
+
     @staticmethod
-    def workload(S: np.ndarray, w_0: float, w_1: float) -> np.ndarray:
-        """计算工作量"""
-        return w_0 + w_1 * S
-    
-    @staticmethod
-    def latency_model(X: Tuple[np.ndarray, np.ndarray], 
-                     P_max: float, k_B: float, k_S: float, 
-                     w_0: float, w_1: float, 
-                     tau_0: float, tau_B: float, tau_S: float) -> np.ndarray:
-        """完整的延迟模型"""
+    def latency_model(X: Tuple[np.ndarray, np.ndarray],
+                     P_max: float, k_B: float, k_S: float,
+                     w_1: float, tau_B: float, tau_S: float) -> np.ndarray:
+        """完整的延迟模型 (6 parameters)"""
         B, S = X
-        
-        # 计算有效吞吐量
-        thr = ThroughputSaturationModel.throughput(B, S, P_max, k_B, k_S)
-        
-        # 计算工作量
-        work = ThroughputSaturationModel.workload(S, w_0, w_1)
-        
-        # 避免除零
+        thr = P_max * (1.0 - np.exp(-k_B * B)) * (1.0 - np.exp(-k_S * S))
         thr = np.maximum(thr, 1e-9)
-        
-        # 计算总延迟
-        latency = tau_0 + work / thr + tau_B * B + tau_S * S
-        
-        return latency
+        return w_1 * S / thr + tau_B * B + tau_S * S
     
     def _extract_features(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """从DataFrame中提取特征"""
@@ -168,91 +150,167 @@ class ThroughputSaturationModel:
         return B_norm, S_norm, scales
     
     def _initialize_parameters(self, B: np.ndarray, S: np.ndarray, T: np.ndarray) -> Tuple[list, list, list]:
-        """参数初始化"""
+        """参数初始化 (6 parameters)"""
         # 估计峰值吞吐量
         throughput_estimates = S / np.maximum(T, 1e-6)
         P_max_init = max(np.percentile(throughput_estimates, 95), 1e-3)
-        
+
         # 线性拟合估计w_1
         try:
             w_1_init = max(np.polyfit(S, T, 1)[0], 1e-9)
-        except:
+        except Exception:
             w_1_init = 0.01
-        
-        # 初始参数
+
+        # 初始参数: [P_max, k_B, k_S, w_1, tau_B, tau_S]
         p0 = [
             P_max_init,     # P_max
             0.1,            # k_B
-            0.01,           # k_S  
-            0.1,            # w_0
+            0.01,           # k_S
             w_1_init,       # w_1
-            np.min(T) * 0.5, # tau_0
             1e-3,           # tau_B
             1e-3            # tau_S
         ]
-        
+
         # 参数下界（物理合理性）
-        lower_bounds = [1e-6, 1e-6, 1e-6, 0.0, 1e-9, 0.0, 0.0, 0.0]
-        
+        lower_bounds = [1e-6, 1e-6, 1e-6, 1e-9, 0.0, 0.0]
+
         # 参数上界（防止过拟合）
-        upper_bounds = [1e6, 10.0, 10.0, 1e3, 1e2, 1e3, 1e1, 1e1]
-        
+        upper_bounds = [1e6, 10.0, 10.0, 1e2, 1e1, 1e1]
+
         if self.verbose:
             logger.info(f"Parameter initialization: P_max={P_max_init:.3f}, w_1={w_1_init:.6f}")
-            
+
         return p0, lower_bounds, upper_bounds
     
+    def _estimate_P_max(self, B: np.ndarray, S: np.ndarray, T: np.ndarray) -> float:
+        """Data-driven estimation of peak throughput P_max.
+
+        Uses the top-percentile effective throughput from large-batch samples
+        to anchor P_max, preventing it from drifting due to identifiability
+        issues with saturation parameters k_B, k_S.
+        """
+        large_mask = (B >= np.percentile(B, 75)) & (S >= np.percentile(S, 75))
+        if np.sum(large_mask) < 10:
+            eff_thr = S / np.maximum(T, 1e-6)
+        else:
+            eff_thr = S[large_mask] / np.maximum(T[large_mask], 1e-6)
+        return float(np.percentile(eff_thr, 95))
+
     def fit(self, df: pd.DataFrame) -> 'ThroughputSaturationModel':
-        """拟合模型"""
+        """两阶段拟合模型
+
+        Stage 1: 数据驱动估计 P_max (固定) + 线性回归估计 τ_B, τ_S
+        Stage 2: 固定 P_max, τ_B, τ_S，用 curve_fit 拟合 k_B, k_S, w_1
+        Stage 3: 固定 P_max, k_B, k_S，重新拟合 w_1, τ_B, τ_S
+        """
         if self.verbose:
-            logger.info("Starting model fitting...")
-            
+            logger.info("Starting two-stage model fitting...")
+
         # 数据预处理
         B, S, T = self._preprocess_data(df)
-        
+
         # 特征归一化
         B_norm, S_norm, scales = self._normalize_features(B, S)
         self.scales = scales
-        
+
         # 参数初始化
         p0, lower_bounds, upper_bounds = self._initialize_parameters(B_norm, S_norm, T)
-        
-        # 非线性拟合
+
         try:
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                
-                popt, pcov = curve_fit(
-                    lambda X, *params: self.latency_model(X, *params),
+
+                # === Stage 1: 固定 P_max + 线性回归估计 τ_B, τ_S ===
+                P_max_fix = self._estimate_P_max(B_norm, S_norm, T)
+
+                # T ≈ α + τ_B·B + τ_S·S
+                A_lin = np.column_stack([np.ones(len(T)), B_norm, S_norm])
+                lin_result, _, _, _ = np.linalg.lstsq(A_lin, T, rcond=None)
+                tau_B_init = max(lin_result[1], 0.0)
+                tau_S_init = max(lin_result[2], 0.0)
+
+                if self.verbose:
+                    logger.info(f"Stage 1: P_max={P_max_fix:.4f}, "
+                                f"tau_B={tau_B_init:.4f}, tau_S={tau_S_init:.4f}")
+
+                # === Stage 2: 固定 P_max, τ_B, τ_S，拟合 k_B, k_S, w_1 ===
+                T_residual = T - tau_B_init * B_norm - tau_S_init * S_norm
+                T_residual = np.maximum(T_residual, 1e-6)
+
+                def stage2_model(X, k_B, k_S, w_1):
+                    B, S = X
+                    thr = P_max_fix * (1.0 - np.exp(-k_B * B)) * (1.0 - np.exp(-k_S * S))
+                    thr = np.maximum(thr, 1e-9)
+                    return w_1 * S / thr
+
+                p0_s2 = [p0[1], p0[2], p0[3]]  # k_B, k_S, w_1
+                lb_s2 = [lower_bounds[1], lower_bounds[2], lower_bounds[3]]
+                ub_s2 = [upper_bounds[1], upper_bounds[2], upper_bounds[3]]
+
+                popt_s2, _ = curve_fit(
+                    stage2_model,
                     xdata=(B_norm, S_norm),
-                    ydata=T,
-                    p0=p0,
-                    bounds=(lower_bounds, upper_bounds),
+                    ydata=T_residual,
+                    p0=p0_s2,
+                    bounds=(lb_s2, ub_s2),
                     maxfev=20000,
                     method='trf'
                 )
-                
-            self.params = popt
-            self.param_cov = pcov
+                k_B_fix, k_S_fix, w_1_s2 = popt_s2
+
+                if self.verbose:
+                    logger.info(f"Stage 2 (structural): k_B={k_B_fix:.4f}, "
+                                f"k_S={k_S_fix:.4f}, w_1={w_1_s2:.6f}")
+
+                # === Stage 3: 固定 P_max, k_B, k_S，重新拟合 w_1, τ_B, τ_S ===
+                def stage3_model(X, w_1, tau_B, tau_S):
+                    B, S = X
+                    thr = P_max_fix * (1.0 - np.exp(-k_B_fix * B)) * (1.0 - np.exp(-k_S_fix * S))
+                    thr = np.maximum(thr, 1e-9)
+                    return w_1 * S / thr + tau_B * B + tau_S * S
+
+                p0_s3 = [w_1_s2, tau_B_init, tau_S_init]
+                lb_s3 = [lower_bounds[3], lower_bounds[4], lower_bounds[5]]
+                ub_s3 = [upper_bounds[3], upper_bounds[4], upper_bounds[5]]
+
+                popt_s3, pcov_s3 = curve_fit(
+                    stage3_model,
+                    xdata=(B_norm, S_norm),
+                    ydata=T,
+                    p0=p0_s3,
+                    bounds=(lb_s3, ub_s3),
+                    maxfev=20000,
+                    method='trf'
+                )
+                w_1_final, tau_B_final, tau_S_final = popt_s3
+
+                if self.verbose:
+                    logger.info(f"Stage 3 (linear): w_1={w_1_final:.6f}, "
+                                f"tau_B={tau_B_final:.4f}, tau_S={tau_S_final:.4f}")
+
+            # 合并 6 个参数: [P_max, k_B, k_S, w_1, tau_B, tau_S]
+            self.params = np.array([P_max_fix, k_B_fix, k_S_fix,
+                                    w_1_final, tau_B_final, tau_S_final])
+            self.param_cov = pcov_s3  # 最后一步的协方差
             self.is_fitted = True
-            
+            self.P_max = P_max_fix
+
             # 计算拟合质量指标
-            T_pred = self.latency_model((B_norm, S_norm), *popt)
-            self.P_max = popt[0]
+            T_pred = self.latency_model((B_norm, S_norm), *self.params)
             self.fit_metrics = {
                 'r2': r2_score(T, T_pred),
                 'rmse': np.sqrt(mean_squared_error(T, T_pred)),
                 'mae': mean_absolute_error(T, T_pred),
                 'n_samples': len(T)
             }
-            
+
             if self.verbose:
                 self._print_fit_results()
-                
+
         except Exception as e:
             logger.error(f"Fitting failed: {e}")
             raise
-            
+
         return self
     
     def _print_fit_results(self):
@@ -354,6 +412,96 @@ class ThroughputSaturationModel:
         model = cls(verbose=verbose)
         model.load_model(filepath)
         return model
+
+    def partial_fit(self, df: pd.DataFrame) -> 'ThroughputSaturationModel':
+        """Partial fit: fix structural params (P_max, k_B, k_S), only fit linear params (w_1, tau_B, tau_S).
+
+        Requires a pretrained model to be loaded first (self.params and self.scales must exist).
+        This implements the multi-timescale adaptation: structural parameters from offline profiling
+        are treated as slow-changing hardware properties, while linear parameters adapt online.
+        """
+        if self.params is None or self.scales is None:
+            raise ValueError("partial_fit requires a pretrained model to be loaded first")
+
+        if self.verbose:
+            logger.info("Starting partial fit (fixing P_max, k_B, k_S)...")
+
+        # Data preprocessing
+        B, S, T = self._preprocess_data(df)
+
+        # Use scales from the pretrained model
+        B_scale, S_scale = self.scales
+        B_norm = B / B_scale
+        S_norm = S / S_scale
+
+        # Fix structural params from pretrained model
+        P_max_fix = self.params[0]
+        k_B_fix = self.params[1]
+        k_S_fix = self.params[2]
+
+        if self.verbose:
+            logger.info(f"Fixed structural params: P_max={P_max_fix:.4f}, "
+                        f"k_B={k_B_fix:.4f}, k_S={k_S_fix:.6f}")
+
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+
+                # Fit only w_1, tau_B, tau_S with structural params fixed
+                def partial_model(X, w_1, tau_B, tau_S):
+                    B, S = X
+                    thr = P_max_fix * (1.0 - np.exp(-k_B_fix * B)) * (1.0 - np.exp(-k_S_fix * S))
+                    thr = np.maximum(thr, 1e-9)
+                    return w_1 * S / thr + tau_B * B + tau_S * S
+
+                # Initial values from current params (or sensible defaults)
+                w_1_init = self.params[3] if self.params[3] > 0 else 0.01
+                tau_B_init = self.params[4] if self.params[4] > 0 else 1e-3
+                tau_S_init = self.params[5] if self.params[5] > 0 else 1e-3
+
+                p0 = [w_1_init, tau_B_init, tau_S_init]
+                lb = [1e-9, 0.0, 0.0]
+                ub = [1e2, 1e1, 1e1]
+
+                popt, pcov = curve_fit(
+                    partial_model,
+                    xdata=(B_norm, S_norm),
+                    ydata=T,
+                    p0=p0,
+                    bounds=(lb, ub),
+                    maxfev=20000,
+                    method='trf'
+                )
+                w_1_fit, tau_B_fit, tau_S_fit = popt
+
+                if self.verbose:
+                    logger.info(f"Partial fit result: w_1={w_1_fit:.6f}, "
+                                f"tau_B={tau_B_fit:.4f}, tau_S={tau_S_fit:.4f}")
+
+            # Update only linear params, keep structural params fixed
+            self.params = np.array([P_max_fix, k_B_fix, k_S_fix,
+                                    w_1_fit, tau_B_fit, tau_S_fit])
+            self.param_cov = pcov
+            self.is_fitted = True
+            self.P_max = P_max_fix
+
+            # Compute fit metrics
+            T_pred = self.latency_model((B_norm, S_norm), *self.params)
+            self.fit_metrics = {
+                'r2': r2_score(T, T_pred),
+                'rmse': np.sqrt(mean_squared_error(T, T_pred)),
+                'mae': mean_absolute_error(T, T_pred),
+                'n_samples': len(T)
+            }
+
+            if self.verbose:
+                self._print_fit_results()
+
+        except Exception as e:
+            logger.error(f"Partial fit failed: {e}")
+            raise
+
+        return self
 
     def get_model_parameters(self) -> Dict:
         """获取模型参数"""
