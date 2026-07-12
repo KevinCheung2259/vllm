@@ -29,7 +29,6 @@ class SLASchedulerConfig:
     min_samples_for_update: int = 50        # 触发模型更新的最少样本数
     max_buffer_size: int = 1000             # 性能数据缓冲区大小
     model_confidence_threshold: float = 0.8 # 模型R²阈值，低于此值使用线性后备
-    mape_check_interval: float = 30.0          # MAPE检查间隔(秒)
     
     # === 预训练模型配置 ===
     use_stable_cluster_model: bool = False  # 是否使用稳定集群模型
@@ -37,8 +36,6 @@ class SLASchedulerConfig:
     pretrained_model_path: str = "sla_scheduler_model.pkl"         # 预训练模型文件路径（空则使用默认）
     save_trained_model: bool = True         # 是否保存训练后的模型
     model_save_path: str = "sla_scheduler_model.pkl"  # 模型保存路径
-    partial_fit_enabled: bool = False      # 是否启用partial fit（固定结构参数，只更新线性参数）
-    eval_only: bool = False                # 仅评估模式：收集数据、计算R²、记录日志，但不更新模型参数
     
     # === SLA参数 ===
     slo_tpot_ms: float = 50.0              # TPOT (Time Per Output Token) SLA上限
@@ -81,7 +78,6 @@ class SLASchedulerConfig:
                 min_samples_for_update=int(os.getenv('VLLM_SLA_MIN_SAMPLES', '64')),
                 max_buffer_size=int(os.getenv('VLLM_SLA_BUFFER_SIZE', '1000')),
                 model_confidence_threshold=float(os.getenv('VLLM_SLA_MODEL_CONFIDENCE', '0.8')),
-                mape_check_interval=float(os.getenv('VLLM_SLA_MAPE_CHECK_INTERVAL', '30.0')),
                 
                 # SLA参数
                 slo_tpot_ms=float(os.getenv('VLLM_SLO_TPOT_MS', '50.0')),
@@ -102,8 +98,6 @@ class SLASchedulerConfig:
                 pretrained_model_path=os.getenv('VLLM_SLA_PRETRAINED_PATH', 'stable_model_h100.pkl'),
                 save_trained_model=os.getenv('VLLM_SLA_SAVE_MODEL', 'false').lower() == 'true',
                 model_save_path=os.getenv('VLLM_SLA_MODEL_SAVE_PATH', 'stable_sla_scheduler_model_v2.pkl'),
-                partial_fit_enabled=os.getenv('VLLM_SLA_PARTIAL_FIT', 'false').lower() == 'true',
-                eval_only=os.getenv('VLLM_SLA_EVAL_ONLY', 'false').lower() == 'true',
                 
                 # 线性后备模型参数
                 fallback_intercept_ms=float(os.getenv('VLLM_SLA_FALLBACK_INTERCEPT', '8.7')),

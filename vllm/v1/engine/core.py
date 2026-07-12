@@ -305,6 +305,44 @@ class EngineCore:
     def reset_prefix_cache(self):
         self.scheduler.reset_prefix_cache()
 
+    def get_num_cached_tokens(self, token_ids: list[int]) -> int:
+        """Number of prompt tokens in `token_ids` that currently hit THIS
+        engine's prefix cache, accounting for real GPU KV-cache eviction.
+
+        Unlike a router-side prefix index (which assumes cached prefixes never
+        expire), this queries the live KVCacheManager, so evicted blocks no
+        longer count as hits. KV-aware routers (e.g. LMetric) use this to get
+        exact per-instance "new prefill tokens" = len(token_ids) - result.
+        Fail-open: returns 0 on any error or when prefix caching is disabled.
+        Runs in the EngineCore loop thread (between steps), so it is a
+        read-only, race-free lookup against the current cache state."""
+        try:
+            from vllm.v1.core.kv_cache_utils import hash_block_tokens
+            kvm = getattr(self.scheduler, "kv_cache_manager", None)
+            if kvm is None or not getattr(kvm, "enable_caching", False):
+                return 0
+            n = len(token_ids)
+            block_size = kvm.block_size
+            if n < block_size:
+                return 0
+            block_hashes = []
+            parent = None
+            for start in range(0, n, block_size):
+                blk = token_ids[start:start + block_size]
+                if len(blk) < block_size:
+                    break
+                bh = hash_block_tokens(kvm.caching_hash_fn, parent, blk, None)
+                block_hashes.append(bh)
+                parent = bh.hash_value
+            if not block_hashes:
+                return 0
+            _, num_cached = kvm.coordinator.find_longest_cache_hit(
+                block_hashes, n - 1)
+            return int(num_cached)
+        except Exception:
+            logger.exception("get_num_cached_tokens failed")
+            return 0
+
     def sleep(self, level: int = 1):
         self.model_executor.sleep(level)
 

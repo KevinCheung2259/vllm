@@ -39,7 +39,7 @@ SPLIT      = 25
 MARK_EVERY = 2
 
 JSON_FILES = [
-    ("adaptive-qps5.json",      "Online-MT"),
+    ("adaptive-qps5.json",      "Online-DT"),
     ("offline-qps5.json",       "Offline"),
     ("native-qps5.json",        "No-model"),
     ("long_window-qps5.json",   "Online-LW"),
@@ -47,21 +47,21 @@ JSON_FILES = [
 ]
 
 COLORS: Dict[str, str] = {
-    "Online-MT":          "orange",
+    "Online-DT":          "orange",
     "Offline":            "green",
     "No-model":             "blue",
     "Online-LW":   "red",
     "Online-SW":  "purple",
 }
 LINESTYLES: Dict[str, str] = {
-    "Online-MT":          "-",
+    "Online-DT":          "-",
     "Offline":            "--",
     "No-model":             "-.",
     "Online-LW":   ":",
     "Online-SW":  "--",
 }
 MARKERS: Dict[str, str] = {
-    "Online-MT":          "o",
+    "Online-DT":          "o",
     "Offline":            "s",
     "No-model":             "^",
     "Online-LW":   "D",

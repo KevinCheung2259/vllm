@@ -776,10 +776,7 @@ class Scheduler(SchedulerInterface):
                 logger.warning(f"ELRAR state collection dispatch failed: {e}")
 
         # Profiling: 记录调度统计信息，但不立即写入文件（等待model run完成）
-        if (self.enable_profiling
-                or not self.sla_scheduler.config.use_pretrained_model
-                or self.sla_scheduler.config.partial_fit_enabled
-                or self.sla_scheduler.config.eval_only):
+        if self.enable_profiling or not self.sla_scheduler.config.use_pretrained_model:
             schedule_end_time = time.monotonic()
             self.last_schedule_end_time = schedule_end_time
             self._prepare_schedule_profiling(
@@ -966,10 +963,7 @@ class Scheduler(SchedulerInterface):
             model_run_duration = model_run_end_time - self.last_schedule_end_time
             
             # SLA调度器性能记录（独立于profiling）
-            # Record when: no pretrained model, OR partial_fit is enabled
-            if (not self.sla_scheduler.config.use_pretrained_model
-                    or self.sla_scheduler.config.partial_fit_enabled
-                    or self.sla_scheduler.config.eval_only):
+            if not self.sla_scheduler.config.use_pretrained_model:
                 self._record_sla_scheduler_performance(model_run_duration)
             
             # Profiling数据记录（仅在启用时）

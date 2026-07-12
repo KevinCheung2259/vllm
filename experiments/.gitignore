@@ -1,0 +1,9 @@
+# 数据集与大日志不入库(GitHub 单文件上限 100MB;这些可离线获取/重生成)
+# 输入数据集:arxiv/Code-Reasoning parquet、workload jsonl、replay 原始日志
+e2e_8xh100/data/
+*.parquet
+*.log
+
+# 覆盖根 .gitignore 的全局 *.csv:本目录下的实验结果 CSV 需要入库
+# (data/ 已整体忽略,其中的 CSV 不会被此负例重新包含)
+!*.csv

@@ -438,6 +438,98 @@ async def ping(raw_request: Request) -> Response:
     return await health(raw_request)
 
 
+@router.get("/scheduler_stats")
+async def scheduler_stats(raw_request: Request):
+    """Live scheduler load signals for load-aware routers (e.g. LMetric).
+
+    Returns the freshest SchedulerStats observed by the engine's output
+    handler — updated every engine step, so far lower staleness than the
+    periodic /metrics scrape. Fields:
+      - num_running:      requests currently running in the batch (R-BS)
+      - num_waiting:      requests queued/waiting (Q-BS)
+      - batch_size:       num_running + num_waiting (LMetric load indicator)
+      - gpu_cache_usage:  KV-cache utilization fraction [0,1]
+    Fail-open: returns zeros with available=false if stats are not yet ready
+    or the engine does not expose them (older client, log_stats off)."""
+    client = engine_client(raw_request)
+    stats = None
+    getter = getattr(client, "get_last_scheduler_stats", None)
+    if getter is not None:
+        try:
+            stats = getter()
+        except Exception:
+            stats = None
+    if stats is None:
+        return JSONResponse(content={
+            "available": False,
+            "num_running": 0,
+            "num_waiting": 0,
+            "batch_size": 0,
+            "gpu_cache_usage": 0.0,
+        })
+    num_running = int(getattr(stats, "num_running_reqs", 0))
+    num_waiting = int(getattr(stats, "num_waiting_reqs", 0))
+    return JSONResponse(content={
+        "available": True,
+        "num_running": num_running,
+        "num_waiting": num_waiting,
+        "batch_size": num_running + num_waiting,
+        "gpu_cache_usage": float(getattr(stats, "gpu_cache_usage", 0.0)),
+    })
+
+
+@router.post("/num_cached_tokens")
+async def num_cached_tokens(raw_request: Request):
+    """Exact per-instance prefix-cache hit for KV-aware routing (e.g. LMetric).
+
+    Body: {"prompt": "..."} and/or {"token_ids": [int, ...]}.
+    If only `prompt` is given it is tokenized with this engine's tokenizer.
+    Returns:
+      - num_tokens:        total prompt tokens
+      - num_cached_tokens: tokens already in THIS engine's prefix cache,
+                           accounting for real GPU-cache eviction
+      - new_prefill_tokens: num_tokens - num_cached_tokens (what LMetric wants)
+    Fail-open: returns available=false with num_cached_tokens=0 on any error
+    or when the engine does not support the query."""
+    client = engine_client(raw_request)
+    try:
+        body = await raw_request.json()
+    except Exception:
+        body = {}
+    token_ids = body.get("token_ids")
+    try:
+        if not token_ids:
+            prompt = body.get("prompt", "")
+            if not prompt:
+                return JSONResponse(content={
+                    "available": True, "num_tokens": 0,
+                    "num_cached_tokens": 0, "new_prefill_tokens": 0,
+                })
+            tokenizer = await client.get_tokenizer()
+            token_ids = tokenizer.encode(prompt)
+        num_tokens = len(token_ids)
+        getter = getattr(client, "get_num_cached_tokens", None)
+        if getter is None:
+            return JSONResponse(content={
+                "available": False, "num_tokens": num_tokens,
+                "num_cached_tokens": 0, "new_prefill_tokens": num_tokens,
+            })
+        num_cached = int(await getter(token_ids))
+        num_cached = max(0, min(num_cached, num_tokens))
+        return JSONResponse(content={
+            "available": True,
+            "num_tokens": num_tokens,
+            "num_cached_tokens": num_cached,
+            "new_prefill_tokens": num_tokens - num_cached,
+        })
+    except Exception:
+        logger.exception("num_cached_tokens endpoint failed")
+        return JSONResponse(content={
+            "available": False, "num_tokens": 0,
+            "num_cached_tokens": 0, "new_prefill_tokens": 0,
+        })
+
+
 @router.post("/tokenize",
              dependencies=[Depends(validate_json_request)],
              responses={

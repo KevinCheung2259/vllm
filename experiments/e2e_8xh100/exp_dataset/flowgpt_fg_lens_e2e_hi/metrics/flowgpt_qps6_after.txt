@@ -1,0 +1,10 @@
+# engine 0 :8000
+vllm:gpu_prefix_cache_queries_total{engine="0",model_name="Qwen/QwQ-32B"} 1.926741e+06
+vllm:gpu_prefix_cache_hits_total{engine="0",model_name="Qwen/QwQ-32B"} 381008.0
+# engine 1 :8001
+# engine 2 :8002
+# engine 3 :8003
+# engine 4 :8004
+# engine 5 :8005
+# engine 6 :8006
+# engine 7 :8007

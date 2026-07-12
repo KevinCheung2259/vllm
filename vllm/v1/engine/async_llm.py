@@ -132,6 +132,13 @@ class AsyncLLM(EngineClient):
             for stat_logger in self.stat_loggers[0]:
                 stat_logger.log_engine_initialized()
         self.output_handler: Optional[asyncio.Task] = None
+        # Shared holder for the latest SchedulerStats seen by the output handler.
+        # A dict (rather than a direct attribute set inside the closure) lets the
+        # background task update it WITHOUT capturing `self`, preserving the
+        # no-circular-ref property of _run_output_handler. Read by the
+        # /scheduler_stats endpoint for live, low-staleness load signals
+        # (used e.g. by the LMetric multiplicative router).
+        self._last_scheduler_stats_holder: dict = {}
         try:
             # Start output handler eagerly if we are in the asyncio eventloop.
             asyncio.get_running_loop()
@@ -371,6 +378,9 @@ class AsyncLLM(EngineClient):
         output_processor = self.output_processor
         log_stats = self.log_stats
         stat_loggers = self.stat_loggers if log_stats else None
+        # Captured by reference (not `self`) to keep the closure free of a
+        # circular ref back to AsyncLLM; see holder init in __init__.
+        stats_holder = self._last_scheduler_stats_holder
 
         async def output_handler():
             try:
@@ -378,6 +388,11 @@ class AsyncLLM(EngineClient):
                     # 1) Pull EngineCoreOutputs from the EngineCore.
                     outputs = await engine_core.get_output_async()
                     num_outputs = len(outputs.outputs)
+
+                    # Cache the freshest scheduler stats for the
+                    # /scheduler_stats endpoint (live load signal).
+                    if outputs.scheduler_stats is not None:
+                        stats_holder["v"] = outputs.scheduler_stats
 
                     iteration_stats = IterationStats() if (
                         log_stats and num_outputs) else None
@@ -453,6 +468,25 @@ class AsyncLLM(EngineClient):
         priority: int = 0,
     ):
         raise ValueError("Not Supported on V1 yet.")
+
+    async def get_num_cached_tokens(self, token_ids: list[int]) -> int:
+        """Query the engine's live prefix cache for how many of `token_ids`
+        are currently cached (eviction-aware). Used by the /num_cached_tokens
+        endpoint for exact per-instance new-prefill in KV-aware routing.
+        Fail-open: returns 0 if the engine core does not support the query."""
+        try:
+            return int(await self.engine_core.call_utility_async(
+                "get_num_cached_tokens", token_ids))
+        except Exception:
+            logger.exception("get_num_cached_tokens RPC failed")
+            return 0
+
+    def get_last_scheduler_stats(self) -> Optional[SchedulerStats]:
+        """Return the most recent SchedulerStats observed by the output handler
+        (live num_running/num_waiting/gpu_cache_usage), or None if not yet
+        available. Used by the /scheduler_stats endpoint for low-staleness load
+        signals (e.g. the LMetric router's batch-size term)."""
+        return self._last_scheduler_stats_holder.get("v")
 
     async def get_vllm_config(self) -> VllmConfig:
         return self.vllm_config
