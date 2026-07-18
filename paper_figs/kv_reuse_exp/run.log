@@ -1,0 +1,49 @@
+[2026-07-18 13:45:10] ================ POLICY=roundrobin ================
+[2026-07-18 13:45:31] 等待 8 引擎就绪...
+  engine 0 OK
+  engine 1 OK
+  engine 2 OK
+  engine 3 OK
+  engine 4 OK
+  engine 5 OK
+  engine 6 OK
+  engine 7 OK
+[2026-07-18 13:48:28] router OK
+[2026-07-18 13:54:10] roundrobin done, csv rows=4254
+[2026-07-18 13:54:10] ================ POLICY=session ================
+[2026-07-18 13:54:34] 等待 8 引擎就绪...
+  engine 0 OK
+  engine 1 OK
+  engine 2 OK
+  engine 3 OK
+  engine 4 OK
+  engine 5 OK
+  engine 6 OK
+  engine 7 OK
+[2026-07-18 13:57:37] router OK
+[2026-07-18 14:03:19] session done, csv rows=4160
+[2026-07-18 14:03:19] ================ POLICY=lmetric ================
+[2026-07-18 14:03:42] 等待 8 引擎就绪...
+  engine 0 OK
+  engine 1 OK
+  engine 2 OK
+  engine 3 OK
+  engine 4 OK
+  engine 5 OK
+  engine 6 OK
+  engine 7 OK
+[2026-07-18 14:06:40] router OK
+[2026-07-18 14:12:22] lmetric done, csv rows=4246
+[2026-07-18 14:12:22] ================ POLICY=prism ================
+[2026-07-18 14:12:45] 等待 8 引擎就绪...
+  engine 0 OK
+  engine 1 OK
+  engine 2 OK
+  engine 3 OK
+  engine 4 OK
+  engine 5 OK
+  engine 6 OK
+  engine 7 OK
+[2026-07-18 14:15:43] router OK
+[2026-07-18 14:21:25] prism done, csv rows=4038
+[2026-07-18 14:21:31] KV_EXP_ALL_DONE

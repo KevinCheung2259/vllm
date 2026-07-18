@@ -1,0 +1,169 @@
+{
+ "roundrobin": {
+  "full": {
+   "n": 8345,
+   "hit_rate_total_pct": 5.6,
+   "req_with_reuse_pct": 99.13,
+   "ttft_p50_s": 0.512,
+   "ttft_p90_s": 0.929,
+   "ttft_p50_highreuse_s": 0.187,
+   "ttft_p50_noreuse_s": 0.327
+  },
+  "trim30": {
+   "n": 7778,
+   "hit_rate_total_pct": 5.61,
+   "req_with_reuse_pct": 99.1,
+   "ttft_p50_s": 0.513,
+   "ttft_p90_s": 0.925,
+   "ttft_p50_highreuse_s": 0.187,
+   "ttft_p50_noreuse_s": 0.327
+  },
+  "arrivals_per_min": [
+   759,
+   851,
+   841,
+   878,
+   872,
+   877,
+   886,
+   817,
+   761,
+   713
+  ],
+  "ttft_p50_per_min": [
+   0.55,
+   0.52,
+   0.52,
+   0.53,
+   0.52,
+   0.53,
+   0.51,
+   0.5,
+   0.49,
+   0.49
+  ]
+ },
+ "session": {
+  "full": {
+   "n": 8312,
+   "hit_rate_total_pct": 10.08,
+   "req_with_reuse_pct": 99.36,
+   "ttft_p50_s": 0.717,
+   "ttft_p90_s": 15.591,
+   "ttft_p50_highreuse_s": 0.376,
+   "ttft_p50_noreuse_s": 0.519
+  },
+  "trim30": {
+   "n": 7771,
+   "hit_rate_total_pct": 10.15,
+   "req_with_reuse_pct": 99.37,
+   "ttft_p50_s": 0.723,
+   "ttft_p90_s": 16.04,
+   "ttft_p50_highreuse_s": 0.382,
+   "ttft_p50_noreuse_s": 0.624
+  },
+  "arrivals_per_min": [
+   759,
+   851,
+   841,
+   878,
+   872,
+   877,
+   886,
+   817,
+   761,
+   692
+  ],
+  "ttft_p50_per_min": [
+   0.83,
+   0.71,
+   0.74,
+   0.82,
+   0.73,
+   0.84,
+   0.76,
+   0.65,
+   0.65,
+   0.6
+  ]
+ },
+ "lmetric": {
+  "full": {
+   "n": 8346,
+   "hit_rate_total_pct": 9.9,
+   "req_with_reuse_pct": 99.75,
+   "ttft_p50_s": 1.092,
+   "ttft_p90_s": 2.661,
+   "ttft_p50_highreuse_s": 0.189,
+   "ttft_p50_noreuse_s": 1.39
+  },
+  "trim30": {
+   "n": 7777,
+   "hit_rate_total_pct": 9.99,
+   "req_with_reuse_pct": 99.74,
+   "ttft_p50_s": 1.117,
+   "ttft_p90_s": 2.723
+  },
+  "arrivals_per_min": [
+   759,
+   851,
+   841,
+   878,
+   872,
+   877,
+   886,
+   817,
+   761,
+   716
+  ],
+  "ttft_p50_per_min": [
+   0.73,
+   1.07,
+   1.25,
+   1.26,
+   1.23,
+   1.26,
+   1.2,
+   1.14,
+   0.87,
+   0.91
+  ]
+ },
+ "prism": {
+  "full": {
+   "n": 2404,
+   "hit_rate_total_pct": 13.5,
+   "req_with_reuse_pct": 99.58,
+   "ttft_p50_s": 1.313,
+   "ttft_p90_s": 3.295
+  },
+  "trim30": {
+   "n": 2203,
+   "hit_rate_total_pct": 13.63,
+   "req_with_reuse_pct": 99.64,
+   "ttft_p50_s": 1.3,
+   "ttft_p90_s": 3.131
+  },
+  "arrivals_per_min": [
+   277,
+   383,
+   408,
+   411,
+   402,
+   370,
+   153,
+   0,
+   0,
+   0
+  ],
+  "ttft_p50_per_min": [
+   1.57,
+   1.31,
+   1.22,
+   1.33,
+   1.2,
+   1.36,
+   1.46
+  ]
+ }
+}

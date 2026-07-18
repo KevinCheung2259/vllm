@@ -1,0 +1,9 @@
+{
+ "n": 5464,
+ "hit_rate_total_pct": 10.7,
+ "req_with_reuse_pct": 99.29,
+ "ttft_p50_s": 2.088,
+ "ttft_p90_s": 27.355,
+ "ttft_p50_highreuse_s": 0.552,
+ "ttft_p50_noreuse_s": 2.291
+}

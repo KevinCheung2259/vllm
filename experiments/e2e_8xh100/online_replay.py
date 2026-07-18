@@ -52,6 +52,8 @@ def set_logging_level(verbose):
 
 # Job queue for storing parsed requests
 job_queue = queue.PriorityQueue()
+# 旁路记录每条请求的 KV prefix-cache 命中 token 数(request_id -> cached_tokens)
+cached_tokens_map = {}
 
 class ReplayJob:
     """Class representing a job to be replayed."""
@@ -388,6 +390,12 @@ async def send_request(client, job):
                     
         tokens_in = tok.usage.prompt_tokens
         tokens_out = tok.usage.completion_tokens
+        # KV prefix-cache 命中 token 数(vLLM 开启 prefix caching 时在 usage 里返回)
+        try:
+            ptd = getattr(tok.usage, "prompt_tokens_details", None)
+            cached_tokens_map[job.request_id] = (getattr(ptd, "cached_tokens", 0) or 0) if ptd else 0
+        except Exception:
+            cached_tokens_map[job.request_id] = 0
         total_time = time.perf_counter() - start_time
         
         return (job.request_id, "OK", ttft, total_time, tokens_in, tokens_out, "")
@@ -437,7 +445,7 @@ class ResultCollector:
             
             self.csv_filename = f"{log_dir}/detailed_results_{timestamp}.csv"
             self.csv_file = open(self.csv_filename, 'w')
-            self.csv_file.write("request_id,conversation_id,send_time,ttft_time,total_time,tokens_in,tokens_out,ttft,tpot\n")
+            self.csv_file.write("request_id,conversation_id,send_time,ttft_time,total_time,tokens_in,tokens_out,ttft,tpot,cached_tokens\n")
             self.csv_file.flush()
             logger.info(f"已创建详细日志文件: {self.csv_filename}")
 
@@ -529,9 +537,11 @@ class ResultCollector:
                 'tpot': tpot
             }
             
-            # 实时写入CSV文件
-            if hasattr(self, 'csv_file') and not self.csv_file.closed:
-                csv_line = f"{request_id},{conversation_id},{send_time},{ttft_time},{total_end_time},{tokens_in},{tokens_out},{ttft},{tpot}\n"
+            # 实时写入CSV文件(句柄若被提前关闭则以追加模式重开,防止静默丢行)
+            if hasattr(self, 'csv_file'):
+                if self.csv_file.closed:
+                    self.csv_file = open(self.csv_filename, 'a')
+                csv_line = f"{request_id},{conversation_id},{send_time},{ttft_time},{total_end_time},{tokens_in},{tokens_out},{ttft},{tpot},{cached_tokens_map.pop(request_id, 0)}\n"
                 self.csv_file.write(csv_line)
                 self.csv_file.flush()  # 立即写入磁盘
     

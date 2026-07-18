@@ -87,6 +87,7 @@ for ((i=0; i<NUM_ENGINES; i++)); do
       --gpu-memory-utilization ${GPU_MEM_UTIL} \
       --max-num-seqs ${MAX_NUM_SEQS} \
       --enable-chunked-prefill \
+      --enable-prompt-tokens-details \
       --disable-log-requests \
       ${QUANT_ARG} ${KV_DTYPE_ARG}" \
     > /dev/null

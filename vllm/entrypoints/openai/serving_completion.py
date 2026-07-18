@@ -24,6 +24,7 @@ from vllm.entrypoints.openai.protocol import (CompletionLogProbs,
                                               CompletionStreamResponse,
                                               ErrorResponse,
                                               RequestResponseMetadata,
+                                              PromptTokenUsageInfo,
                                               UsageInfo)
 # yapf: enable
 from vllm.entrypoints.openai.serving_engine import (OpenAIServing,
@@ -52,12 +53,14 @@ class OpenAIServingCompletion(OpenAIServing):
         *,
         request_logger: Optional[RequestLogger],
         return_tokens_as_token_ids: bool = False,
+        enable_prompt_tokens_details: bool = False,
     ):
         super().__init__(engine_client=engine_client,
                          model_config=model_config,
                          models=models,
                          request_logger=request_logger,
                          return_tokens_as_token_ids=return_tokens_as_token_ids)
+        self.enable_prompt_tokens_details = enable_prompt_tokens_details
         self.default_sampling_params = (
             self.model_config.get_diff_sampling_param())
         if self.default_sampling_params:
@@ -295,6 +298,7 @@ class OpenAIServingCompletion(OpenAIServing):
         previous_num_tokens = [0] * num_choices * num_prompts
         has_echoed = [False] * num_choices * num_prompts
         num_prompt_tokens = [0] * num_prompts
+        num_cached_tokens = [0] * num_prompts
 
         stream_options = request.stream_options
         if stream_options:
@@ -313,6 +317,8 @@ class OpenAIServingCompletion(OpenAIServing):
                 # Prompt details are excluded from later streamed outputs
                 if prompt_token_ids is not None:
                     num_prompt_tokens[prompt_idx] = len(prompt_token_ids)
+                if getattr(res, "num_cached_tokens", None):
+                    num_cached_tokens[prompt_idx] = res.num_cached_tokens
 
                 delta_token_ids: GenericSequence[int]
                 out_logprobs: Optional[GenericSequence[Optional[dict[
@@ -404,6 +410,11 @@ class OpenAIServingCompletion(OpenAIServing):
                 prompt_tokens=total_prompt_tokens,
                 completion_tokens=total_completion_tokens,
                 total_tokens=total_prompt_tokens + total_completion_tokens)
+            if self.enable_prompt_tokens_details:
+                total_cached_tokens = sum(num_cached_tokens)
+                if total_cached_tokens:
+                    final_usage_info.prompt_tokens_details = \
+                        PromptTokenUsageInfo(cached_tokens=total_cached_tokens)
 
             if include_usage:
                 final_usage_chunk = CompletionStreamResponse(
@@ -508,6 +519,13 @@ class OpenAIServingCompletion(OpenAIServing):
             completion_tokens=num_generated_tokens,
             total_tokens=num_prompt_tokens + num_generated_tokens,
         )
+        if self.enable_prompt_tokens_details:
+            total_cached_tokens = sum(
+                (getattr(r, "num_cached_tokens", 0) or 0)
+                for r in final_res_batch)
+            if total_cached_tokens:
+                usage.prompt_tokens_details = PromptTokenUsageInfo(
+                    cached_tokens=total_cached_tokens)
 
         request_metadata.final_usage_info = usage
 
